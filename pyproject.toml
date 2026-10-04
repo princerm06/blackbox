@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackbox"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+    "opencv-python>=4.10",
+    "numpy>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["blackbox*"]
+exclude = ["data*", "scripts*", "tests*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
