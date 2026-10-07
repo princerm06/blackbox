@@ -268,3 +268,128 @@ def test_observed_object_has_no_unobserved_change_distribution() -> None:
     )
 
     assert projector.uncertainty_for("object-1") == ()
+
+
+def test_elapsed_unseen_time_increases_changed_weight() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[assignment()],
+        events=[event(EventType.OBJECT_APPEARED, 0, 0)],
+    )
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[],
+        events=[
+            event(
+                EventType.OBJECT_DISAPPEARED,
+                1,
+                33,
+                provenance=EventProvenance.INFERRED,
+            )
+        ],
+    )
+
+    initial = projector.uncertainty_for("object-1")[0]
+    initial_changed = next(
+        hypothesis.weight
+        for hypothesis in initial.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    projector.update(
+        frame_index=11,
+        timestamp_ms=363,
+        identity_assignments=[],
+        events=[],
+    )
+
+    later = projector.uncertainty_for("object-1")[0]
+    later_changed = next(
+        hypothesis.weight
+        for hypothesis in later.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    assert initial_changed == 0.5
+    assert later_changed > initial_changed
+
+
+def test_other_object_motion_is_change_opportunity() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            assignment("track-1", "object-1"),
+            assignment("track-2", "object-2"),
+        ],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+                track_id="track-1",
+            ),
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+                track_id="track-2",
+            ),
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            assignment("track-2", "object-2"),
+        ],
+        events=[
+            event(
+                EventType.OBJECT_DISAPPEARED,
+                1,
+                33,
+                track_id="track-1",
+                provenance=EventProvenance.INFERRED,
+            )
+        ],
+    )
+
+    projector.update(
+        frame_index=2,
+        timestamp_ms=66,
+        identity_assignments=[
+            assignment("track-2", "object-2"),
+        ],
+        events=[
+            event(
+                EventType.OBJECT_MOVED,
+                2,
+                66,
+                track_id="track-2",
+            )
+        ],
+    )
+
+    signals = projector.opportunities_for("object-1")
+
+    assert any(
+        signal.signal_type.value == "OTHER_OBJECT_MOVED"
+        and signal.source_object_id == "object-2"
+        for signal in signals
+    )
+
+    distribution = projector.uncertainty_for("object-1")[0]
+    changed_weight = next(
+        hypothesis.weight
+        for hypothesis in distribution.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    assert changed_weight > 0.5
