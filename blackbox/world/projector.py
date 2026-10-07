@@ -397,7 +397,108 @@ class WorldStateProjector:
             updated_timestamp_ms=self._current_timestamp_ms,
         )
 
-        return (distribution,)
+        state_distribution = distribution
+        location_distribution = self._location_distribution_for(
+            object_id,
+            history,
+            signals,
+        )
+
+        return (
+            state_distribution,
+            location_distribution,
+        )
+
+    def _location_distribution_for(
+        self,
+        object_id: str,
+        history: _ObjectHistory,
+        signals: tuple[OpportunitySignal, ...],
+    ) -> HypothesisDistribution:
+        candidate_scores: dict[str, float] = {
+            "last_seen_area": 1.0,
+            "outside_observed_scene": 0.35,
+        }
+        candidate_rationales: dict[str, list[str]] = {
+            "last_seen_area": [
+                "The object was directly observed at its last-seen area."
+            ],
+            "outside_observed_scene": [
+                "The object is currently unobserved, so departure from the "
+                "observed scene remains possible."
+            ],
+        }
+
+        for relation in self.relations_for(object_id):
+            other_object_id = (
+                relation.second_object_id
+                if relation.first_object_id == object_id
+                else relation.first_object_id
+            )
+            value = f"associated_with:{other_object_id}"
+            score = 0.45 + (0.55 * relation.confidence)
+
+            candidate_scores[value] = max(
+                candidate_scores.get(value, 0.0),
+                score,
+            )
+            candidate_rationales.setdefault(value, []).append(
+                "The candidate object had a recent spatial association "
+                "with the hidden object."
+            )
+
+        for signal in signals:
+            if signal.source_object_id is None:
+                continue
+
+            value = f"associated_with:{signal.source_object_id}"
+
+            if value not in candidate_scores:
+                continue
+
+            if signal.relation_type is None:
+                continue
+
+            candidate_scores[value] += signal.strength
+            candidate_rationales[value].append(
+                f"{signal.signal_type.value} affected this related "
+                "candidate while the object was unseen."
+            )
+
+        elapsed_strength = sum(
+            signal.strength
+            for signal in signals
+            if signal.signal_type == OpportunityType.ELAPSED_UNSEEN
+        )
+        candidate_scores["outside_observed_scene"] += elapsed_strength
+        if elapsed_strength > 0.0:
+            candidate_rationales["outside_observed_scene"].append(
+                "Longer unseen duration increases the baseline possibility "
+                "that the object is outside the observed scene."
+            )
+
+        total_score = sum(candidate_scores.values())
+
+        hypotheses = tuple(
+            CompetingHypothesis(
+                value=value,
+                weight=score / total_score,
+                provenance="heuristic_location_baseline",
+                rationale=" ".join(candidate_rationales[value]),
+            )
+            for value, score in sorted(
+                candidate_scores.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        )
+
+        return HypothesisDistribution(
+            subject_object_id=object_id,
+            predicate="CURRENT_LOCATION_CANDIDATE",
+            hypotheses=hypotheses,
+            updated_frame_index=self._current_frame_index,
+            updated_timestamp_ms=self._current_timestamp_ms,
+        )
 
     def all_beliefs(
         self,
