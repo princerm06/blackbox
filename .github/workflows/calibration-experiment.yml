@@ -8,6 +8,7 @@ on:
     paths:
       - "blackbox/experiments/**"
       - "scripts/run_calibration_experiment.py"
+      - "scripts/run_learned_experiment.py"
       - "tests/experiments/**"
       - ".github/workflows/calibration-experiment.yml"
 
@@ -32,11 +33,31 @@ jobs:
 
       - name: Run canonical synthetic experiment
         run: |
-          python scripts/run_calibration_experiment.py             --cases-per-level 250             --seed 7             --bins 10             --output-dir runs/calibration
+          python scripts/run_calibration_experiment.py \
+            --cases-per-level 250 \
+            --seed 7 \
+            --bins 10 \
+            --output-dir runs/calibration
+
+      - name: Run learned-model experiment
+        run: |
+          python scripts/run_learned_experiment.py \
+            --cases-per-level 500 \
+            --data-seed 7 \
+            --split-seed 17 \
+            --bins 10 \
+            --output-dir runs/learned-calibration
 
       - name: Upload calibration artifacts
         uses: actions/upload-artifact@v4
         with:
           name: calibration-seed-7
           path: runs/calibration/
+          if-no-files-found: error
+
+      - name: Upload learned-model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: learned-calibration-seed-7
+          path: runs/learned-calibration/
           if-no-files-found: error
