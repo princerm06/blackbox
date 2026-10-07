@@ -233,9 +233,13 @@ def test_disappearance_creates_competing_uncertainty_hypotheses() -> None:
 
     distributions = projector.uncertainty_for("object-1")
 
-    assert len(distributions) == 1
+    assert len(distributions) == 2
 
-    distribution = distributions[0]
+    distribution = next(
+        item
+        for item in distributions
+        if item.predicate == "UNOBSERVED_CHANGE_STATE"
+    )
 
     assert distribution.predicate == "UNOBSERVED_CHANGE_STATE"
     assert {
