@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   API_BASE,
@@ -32,6 +32,8 @@ export default function HomePage() {
   const [status, setStatus] = useState("Ready");
   const [mediaMode, setMediaMode] = useState<"annotated" | "source">("annotated");
   const [error, setError] = useState<string | null>(null);
+  const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("blackbox.session_id");
@@ -127,6 +129,17 @@ export default function HomePage() {
       setStatus("Target removed");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove target");
+    }
+  }
+
+  function seekTo(timestampMs: number, eventKey?: string) {
+    const player = videoRef.current;
+    if (!player) return;
+
+    player.currentTime = Math.max(0, timestampMs / 1000);
+    player.play().catch(() => undefined);
+    if (eventKey) {
+      setSelectedEventKey(eventKey);
     }
   }
 
@@ -266,6 +279,7 @@ export default function HomePage() {
                   </button>
                 </div>
                 <video
+                  ref={videoRef}
                   className="video"
                   controls
                   src={mediaUrl(
@@ -533,9 +547,20 @@ export default function HomePage() {
                         />
                       </div>
                     </div>
-                    <span className={object.has_uncertainty ? "uncertain" : "stable"}>
-                      {object.has_uncertainty ? "uncertain" : "grounded"}
-                    </span>
+                    <div className="objectActions">
+                      {object.last_observed_timestamp_ms !== null && (
+                        <button
+                          type="button"
+                          className="targetAction"
+                          onClick={() => seekTo(object.last_observed_timestamp_ms ?? 0)}
+                        >
+                          Last seen
+                        </button>
+                      )}
+                      <span className={object.has_uncertainty ? "uncertain" : "stable"}>
+                        {object.has_uncertainty ? "uncertain" : "grounded"}
+                      </span>
+                    </div>
                   </div>
                 ))
               )}
@@ -554,22 +579,33 @@ export default function HomePage() {
               {!run || run.events.length === 0 ? (
                 <p className="muted">No events yet.</p>
               ) : (
-                [...run.events].reverse().slice(0, 8).map((event, index) => (
-                  <div
-                    className="timelineItem"
-                    key={event.object_id + "-" + event.frame_index + "-" + index}
-                  >
-                    <span className="timelineDot" />
-                    <div>
-                      <strong>
-                        {event.event_type.replaceAll("_", " ").toLowerCase()}
-                      </strong>
-                      <span>
-                        {event.class_name} · {(event.timestamp_ms / 1000).toFixed(1)}s · {event.provenance}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                [...run.events].reverse().slice(0, 8).map((event, index) => {
+                  const eventKey =
+                    event.object_id + "-" + event.frame_index + "-" + index;
+                  return (
+                    <button
+                      type="button"
+                      className={
+                        selectedEventKey === eventKey
+                          ? "timelineItem selectedTimelineItem"
+                          : "timelineItem"
+                      }
+                      key={eventKey}
+                      onClick={() => seekTo(event.timestamp_ms, eventKey)}
+                    >
+                      <span className="timelineDot" />
+                      <div>
+                        <strong>
+                          {event.event_type.replaceAll("_", " ").toLowerCase()}
+                        </strong>
+                        <span>
+                          {event.class_name} · {(event.timestamp_ms / 1000).toFixed(1)}s · {event.provenance}
+                        </span>
+                      </div>
+                      <span className="timelineJump">View</span>
+                    </button>
+                  );
+                })
               )}
             </div>
           </section>
