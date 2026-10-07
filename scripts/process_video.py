@@ -32,10 +32,17 @@ def main() -> None:
 
     print(f"Processed frames: {summary.frames_processed}")
     print(f"Detections emitted: {summary.detections_emitted}")
-    print(f"Detections: {summary.observations_path}")
+    print(
+        "Track observations emitted: "
+        f"{summary.track_observations_emitted}"
+    )
+    print(f"Observations: {summary.observations_path}")
 
     if summary.annotated_video_path is not None:
-        print(f"Annotated video: {summary.annotated_video_path}")
+        print(
+            "Annotated video: "
+            f"{summary.annotated_video_path}"
+        )
 
 
 if __name__ == "__main__":
