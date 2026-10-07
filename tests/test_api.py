@@ -38,6 +38,7 @@ class FakeProcessor:
         return ProcessedRun(
             summary=summary,
             world_state=WorldStateProjector(),
+            source_video_path=input_path,
         )
 
 
