@@ -715,3 +715,307 @@ def test_spatial_relation_is_not_claimed_as_containment() -> None:
 
     assert len(relations) == 1
     assert relations[0].relation_type.value == "SPATIALLY_ASSOCIATED"
+
+
+def test_hidden_object_gets_candidate_location_distribution() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            positioned_assignment(
+                "keys-track",
+                "keys-object",
+                0,
+                0,
+                40,
+                40,
+            ),
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="bag-track",
+                class_name="backpack",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_DISAPPEARED,
+                frame_index=1,
+                timestamp_ms=33,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=1.0,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            )
+        ],
+    )
+
+    distributions = projector.uncertainty_for("keys-object")
+    location = next(
+        distribution
+        for distribution in distributions
+        if distribution.predicate == "CURRENT_LOCATION_CANDIDATE"
+    )
+
+    values = {
+        hypothesis.value
+        for hypothesis in location.hypotheses
+    }
+
+    assert values == {
+        "last_seen_area",
+        "associated_with:bag-object",
+        "outside_observed_scene",
+    }
+    assert abs(
+        sum(
+            hypothesis.weight
+            for hypothesis in location.hypotheses
+        ) - 1.0
+    ) < 1e-9
+
+
+def test_related_interaction_shifts_location_mass_toward_candidate() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            positioned_assignment(
+                "keys-track",
+                "keys-object",
+                0,
+                0,
+                40,
+                40,
+            ),
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="bag-track",
+                class_name="backpack",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_DISAPPEARED,
+                frame_index=1,
+                timestamp_ms=33,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=1.0,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            )
+        ],
+    )
+
+    before = next(
+        distribution
+        for distribution in projector.uncertainty_for("keys-object")
+        if distribution.predicate == "CURRENT_LOCATION_CANDIDATE"
+    )
+    before_bag = next(
+        hypothesis.weight
+        for hypothesis in before.hypotheses
+        if hypothesis.value == "associated_with:bag-object"
+    )
+
+    projector.update(
+        frame_index=2,
+        timestamp_ms=66,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.PERSON_OBJECT_INTERACTION,
+                frame_index=2,
+                timestamp_ms=66,
+                subject_track_id="bag-track",
+                class_name="backpack",
+                confidence=0.8,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            )
+        ],
+    )
+
+    after = next(
+        distribution
+        for distribution in projector.uncertainty_for("keys-object")
+        if distribution.predicate == "CURRENT_LOCATION_CANDIDATE"
+    )
+    after_bag = next(
+        hypothesis.weight
+        for hypothesis in after.hypotheses
+        if hypothesis.value == "associated_with:bag-object"
+    )
+
+    assert after_bag > before_bag
+
+
+def test_location_candidate_does_not_claim_containment() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            positioned_assignment(
+                "keys-track",
+                "keys-object",
+                0,
+                0,
+                40,
+                40,
+            ),
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            )
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_DISAPPEARED,
+                frame_index=1,
+                timestamp_ms=33,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=1.0,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            )
+        ],
+    )
+
+    location = next(
+        distribution
+        for distribution in projector.uncertainty_for("keys-object")
+        if distribution.predicate == "CURRENT_LOCATION_CANDIDATE"
+    )
+
+    assert all(
+        "inside" not in str(hypothesis.value).lower()
+        for hypothesis in location.hypotheses
+    )
