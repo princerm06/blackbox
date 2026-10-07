@@ -3,8 +3,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from blackbox.api import create_app
+from blackbox.app_processing import ProcessedRun
 from blackbox.perception.pipeline import ProcessingSummary
 from blackbox.sessions import SessionStore
+from blackbox.world.projector import WorldStateProjector
 
 
 class FakeProcessor:
@@ -24,7 +26,7 @@ class FakeProcessor:
         annotated = output_dir / "annotated.mp4"
         annotated.write_bytes(b"fake")
 
-        return ProcessingSummary(
+        summary = ProcessingSummary(
             frames_processed=12,
             detections_emitted=8,
             track_observations_emitted=7,
@@ -32,6 +34,10 @@ class FakeProcessor:
             events_emitted=3,
             observations_path=observations,
             annotated_video_path=annotated,
+        )
+        return ProcessedRun(
+            summary=summary,
+            world_state=WorldStateProjector(),
         )
 
 
