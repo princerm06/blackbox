@@ -75,6 +75,8 @@ def test_write_experiment_report_creates_research_artifacts(
         "summary.md",
         "predictions.csv",
         "calibration.csv",
+        "metric_comparison.svg",
+        "reliability.svg",
     }
     assert {path.name for path in tmp_path.iterdir()} == expected
 
@@ -99,3 +101,27 @@ def test_write_experiment_report_creates_research_artifacts(
     ) as handle:
         calibration_rows = list(csv.DictReader(handle))
     assert calibration_rows
+
+
+def test_report_figures_are_svg(tmp_path) -> None:
+    cases = generate_controlled_cases(
+        GeneratorConfig(cases_per_level=2, seed=13)
+    )
+    write_experiment_report(
+        tmp_path,
+        (ConstantPriorBaseline(0.2), HeuristicModelBaseline()),
+        cases,
+        bins=4,
+    )
+
+    metric_svg = (tmp_path / "metric_comparison.svg").read_text(
+        encoding="utf-8"
+    )
+    reliability_svg = (tmp_path / "reliability.svg").read_text(
+        encoding="utf-8"
+    )
+
+    assert metric_svg.startswith("<svg")
+    assert "BlackBox baseline metric comparison" in metric_svg
+    assert reliability_svg.startswith("<svg")
+    assert "Reliability diagram" in reliability_svg
