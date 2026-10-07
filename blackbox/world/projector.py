@@ -16,6 +16,10 @@ from blackbox.schemas.uncertainty import (
     CompetingHypothesis,
     HypothesisDistribution,
 )
+from blackbox.world.change_model import (
+    HeuristicUnobservedChangeModel,
+    UnobservedChangeModel,
+)
 from blackbox.world.relations import infer_spatial_relations
 
 
@@ -64,6 +68,7 @@ class WorldStateProjector:
     def __init__(
         self,
         max_relation_age_frames: int = 30,
+        change_model: UnobservedChangeModel | None = None,
     ) -> None:
         if max_relation_age_frames < 0:
             raise ValueError(
@@ -71,6 +76,11 @@ class WorldStateProjector:
             )
 
         self.max_relation_age_frames = max_relation_age_frames
+        self.change_model = (
+            change_model
+            if change_model is not None
+            else HeuristicUnobservedChangeModel()
+        )
         self._histories: dict[str, _ObjectHistory] = {}
         self._track_to_object: dict[str, str] = {}
         self._latest_relations: dict[
@@ -367,47 +377,12 @@ class WorldStateProjector:
             return ()
 
         signals = self.opportunities_for(object_id)
-        opportunity_strength = min(
-            0.45,
-            sum(signal.strength for signal in signals),
+        state_distribution = self.change_model.distribution(
+            object_id=object_id,
+            signals=signals,
+            frame_index=self._current_frame_index,
+            timestamp_ms=self._current_timestamp_ms,
         )
-
-        changed_weight = 0.5 + opportunity_strength
-        unchanged_weight = 1.0 - changed_weight
-
-        if signals:
-            rationale = (
-                f"{len(signals)} opportunity signal(s) increased the "
-                "heuristic baseline probability of unobserved change."
-            )
-        else:
-            rationale = (
-                "No opportunity-for-change signals have accumulated since "
-                "the object disappeared."
-            )
-
-        distribution = HypothesisDistribution(
-            subject_object_id=object_id,
-            predicate="UNOBSERVED_CHANGE_STATE",
-            hypotheses=(
-                CompetingHypothesis(
-                    value="unchanged_since_last_observation",
-                    weight=unchanged_weight,
-                    provenance="heuristic_baseline",
-                    rationale=rationale,
-                ),
-                CompetingHypothesis(
-                    value="changed_while_unobserved",
-                    weight=changed_weight,
-                    provenance="heuristic_baseline",
-                    rationale=rationale,
-                ),
-            ),
-            updated_frame_index=self._current_frame_index,
-            updated_timestamp_ms=self._current_timestamp_ms,
-        )
-
-        state_distribution = distribution
         location_distribution = self._location_distribution_for(
             object_id,
             history,
