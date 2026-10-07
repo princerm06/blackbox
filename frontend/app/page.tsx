@@ -10,6 +10,8 @@ import {
   getRun,
   mediaUrl,
   registerTarget,
+  removeTarget,
+  setTargetEnabled,
   uploadVideo,
   whereIs,
 } from "../lib/api";
@@ -59,6 +61,47 @@ export default function HomePage() {
       setStatus("Target added");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add target");
+    }
+  }
+
+  async function handleToggleTarget(target: TrackingTarget) {
+    if (!sessionId) return;
+    setError(null);
+    try {
+      const updated = await setTargetEnabled(
+        sessionId,
+        target.target_id,
+        !target.enabled,
+      );
+      setTargets((current) =>
+        current.map((item) =>
+          item.target_id === updated.target_id ? updated : item,
+        ),
+      );
+      if (!updated.enabled && queryTargetId === updated.target_id) {
+        setQueryTargetId("");
+      }
+      setStatus(updated.enabled ? "Target enabled" : "Target paused");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update target");
+    }
+  }
+
+  async function handleRemoveTarget(target: TrackingTarget) {
+    if (!sessionId) return;
+    setError(null);
+    try {
+      await removeTarget(sessionId, target.target_id);
+      setTargets((current) =>
+        current.filter((item) => item.target_id !== target.target_id),
+      );
+      if (queryTargetId === target.target_id) {
+        setQueryTargetId("");
+        setQueryResult(null);
+      }
+      setStatus("Target removed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove target");
     }
   }
 
@@ -148,14 +191,14 @@ export default function HomePage() {
               <button
                 className="button buttonPrimary"
                 onClick={handleProcess}
-                disabled={!video || targets.length === 0}
+                disabled={!video || targets.filter((target) => target.enabled).length === 0}
               >
                 Process scene
               </button>
               <span className="muted">
-                {targets.length === 0
-                  ? "Add at least one tracked object."
-                  : targets.length + " target" + (targets.length === 1 ? "" : "s") + " active"}
+                {targets.filter((target) => target.enabled).length === 0
+                  ? "Add or enable at least one tracked object."
+                  : targets.filter((target) => target.enabled).length + " target" + (targets.filter((target) => target.enabled).length === 1 ? "" : "s") + " active"}
               </span>
             </div>
           </section>
@@ -174,7 +217,7 @@ export default function HomePage() {
                 onChange={(event) => setQueryTargetId(event.target.value)}
               >
                 <option value="">Choose an object</option>
-                {targets.map((target) => (
+                {targets.filter((target) => target.enabled).map((target) => (
                   <option key={target.target_id} value={target.target_id}>
                     {target.display_name}
                   </option>
@@ -255,11 +298,26 @@ export default function HomePage() {
               ) : (
                 targets.map((target) => (
                   <div className="targetRow" key={target.target_id}>
-                    <div>
+                    <div className="targetInfo">
                       <strong>{target.display_name}</strong>
                       <span>{target.prompt}</span>
                     </div>
-                    <span className="targetState">tracking</span>
+                    <div className="targetActions">
+                      <button
+                        type="button"
+                        className="targetAction"
+                        onClick={() => handleToggleTarget(target)}
+                      >
+                        {target.enabled ? "Pause" : "Resume"}
+                      </button>
+                      <button
+                        type="button"
+                        className="targetAction dangerAction"
+                        onClick={() => handleRemoveTarget(target)}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
