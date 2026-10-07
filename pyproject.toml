@@ -17,6 +17,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+open-vocab = [
+    "transformers>=4.57",
+    "torch>=2.4",
+    "pillow>=10.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["blackbox*"]
