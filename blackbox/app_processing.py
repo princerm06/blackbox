@@ -23,6 +23,7 @@ DetectorFactory = Callable[[TargetRegistry], Detector]
 class ProcessedRun:
     summary: ProcessingSummary
     world_state: WorldStateProjector
+    source_video_path: Path
 
 
 class RunStore:
@@ -91,6 +92,7 @@ class SessionVideoProcessor:
         return ProcessedRun(
             summary=summary,
             world_state=world_state,
+            source_video_path=input_path,
         )
 
 
