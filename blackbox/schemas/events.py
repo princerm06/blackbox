@@ -8,6 +8,7 @@ class EventType(str, Enum):
     OBJECT_MOVED = "OBJECT_MOVED"
     OBJECT_DISAPPEARED = "OBJECT_DISAPPEARED"
     OBJECT_REAPPEARED = "OBJECT_REAPPEARED"
+    PERSON_OBJECT_INTERACTION = "PERSON_OBJECT_INTERACTION"
 
 
 class EventProvenance(str, Enum):
@@ -25,3 +26,4 @@ class WorldEvent:
     confidence: float
     provenance: EventProvenance
     metadata: dict[str, Any]
+    related_track_ids: tuple[str, ...] = ()
