@@ -1,11 +1,51 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from blackbox.api import create_app
+from blackbox.perception.pipeline import ProcessingSummary
 from blackbox.sessions import SessionStore
 
 
-def make_client() -> TestClient:
-    return TestClient(create_app(SessionStore()))
+class FakeProcessor:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def process(self, registry, input_path, output_dir):
+        self.calls.append(
+            {
+                "prompts": registry.prompts(),
+                "input_path": input_path,
+                "output_dir": output_dir,
+            }
+        )
+        observations = output_dir / "observations.jsonl"
+        observations.write_text("{}\n", encoding="utf-8")
+        annotated = output_dir / "annotated.mp4"
+        annotated.write_bytes(b"fake")
+
+        return ProcessingSummary(
+            frames_processed=12,
+            detections_emitted=8,
+            track_observations_emitted=7,
+            identity_assignments_emitted=7,
+            events_emitted=3,
+            observations_path=observations,
+            annotated_video_path=annotated,
+        )
+
+
+def make_client(
+    processor=None,
+    workspace_root: Path = Path("runs") / "test-api",
+) -> TestClient:
+    return TestClient(
+        create_app(
+            SessionStore(),
+            processor=processor,
+            workspace_root=workspace_root,
+        )
+    )
 
 
 def test_health_endpoint() -> None:
@@ -59,3 +99,68 @@ def test_unknown_session_returns_404() -> None:
     response = make_client().get("/sessions/missing/targets")
 
     assert response.status_code == 404
+
+
+def test_video_upload_requires_registered_target(tmp_path) -> None:
+    client = make_client(FakeProcessor(), tmp_path)
+    session_id = client.post("/sessions").json()["session_id"]
+
+    response = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video-bytes", "video/mp4")},
+    )
+
+    assert response.status_code == 409
+
+
+def test_video_upload_uses_session_targets(tmp_path) -> None:
+    processor = FakeProcessor()
+    client = make_client(processor, tmp_path)
+    session_id = client.post("/sessions").json()["session_id"]
+
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={
+            "display_name": "My Keys",
+            "prompt": "keys",
+        },
+    )
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={
+            "display_name": "Blue Backpack",
+            "prompt": "backpack",
+        },
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video-bytes", "video/mp4")},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["session_id"] == session_id
+    assert [target["prompt"] for target in payload["targets"]] == [
+        "keys",
+        "backpack",
+    ]
+    assert payload["summary"]["frames_processed"] == 12
+    assert processor.calls[0]["prompts"] == ("keys", "backpack")
+    assert processor.calls[0]["input_path"].read_bytes() == b"video-bytes"
+
+
+def test_empty_video_is_rejected(tmp_path) -> None:
+    client = make_client(FakeProcessor(), tmp_path)
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+
+    response = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"", "video/mp4")},
+    )
+
+    assert response.status_code == 400
