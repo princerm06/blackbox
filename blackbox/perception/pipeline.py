@@ -7,10 +7,12 @@ import numpy as np
 
 from blackbox.events.extractor import EventExtractor
 from blackbox.perception.detector import Detector
+from blackbox.perception.identity import ObjectIdentityResolver
 from blackbox.perception.tracker import IoUTracker, Tracker
 from blackbox.perception.video import VideoReader
 from blackbox.schemas.beliefs import ObjectStateHypothesis
 from blackbox.schemas.events import WorldEvent
+from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.perception import Detection, TrackObservation
 from blackbox.world.projector import WorldStateProjector
 
@@ -20,6 +22,7 @@ class ProcessingSummary:
     frames_processed: int
     detections_emitted: int
     track_observations_emitted: int
+    identity_assignments_emitted: int
     events_emitted: int
     observations_path: Path
     annotated_video_path: Path | None
@@ -51,6 +54,18 @@ def track_observation_to_dict(
             "x2": observation.bbox.x2,
             "y2": observation.bbox.y2,
         },
+    }
+
+
+def identity_assignment_to_dict(
+    assignment: IdentityAssignment,
+) -> dict[str, object]:
+    return {
+        "object_id": assignment.object_id,
+        "track_id": assignment.track_id,
+        "class_name": assignment.class_name,
+        "confidence": assignment.confidence,
+        "provenance": assignment.provenance.value,
     }
 
 
@@ -87,8 +102,13 @@ def belief_to_dict(
 def annotate_frame(
     frame: np.ndarray,
     observations: list[TrackObservation],
+    assignments: list[IdentityAssignment] | None = None,
 ) -> np.ndarray:
     annotated = frame.copy()
+    object_ids_by_track = {
+        assignment.track_id: assignment.object_id
+        for assignment in (assignments or [])
+    }
 
     for observation in observations:
         bbox = observation.bbox
@@ -107,8 +127,14 @@ def annotate_frame(
             2,
         )
 
+        object_id = object_ids_by_track.get(observation.track_id)
+        identity_label = (
+            f"{object_id} "
+            if object_id is not None
+            else ""
+        )
         label = (
-            f"{observation.track_id} "
+            f"{identity_label}{observation.track_id} "
             f"{observation.class_name} "
             f"{observation.confidence:.2f}"
         )
@@ -132,11 +158,15 @@ class VideoDetectionPipeline:
         self,
         detector: Detector,
         tracker: Tracker | None = None,
+        identity_resolver: ObjectIdentityResolver | None = None,
         event_extractor: EventExtractor | None = None,
         world_state: WorldStateProjector | None = None,
     ):
         self.detector = detector
         self.tracker = tracker or IoUTracker()
+        self.identity_resolver = (
+            identity_resolver or ObjectIdentityResolver()
+        )
         self.event_extractor = event_extractor or EventExtractor()
         self.world_state = world_state or WorldStateProjector()
 
@@ -176,6 +206,7 @@ class VideoDetectionPipeline:
         frames_processed = 0
         detections_emitted = 0
         track_observations_emitted = 0
+        identity_assignments_emitted = 0
         events_emitted = 0
 
         try:
@@ -190,6 +221,11 @@ class VideoDetectionPipeline:
 
                     track_observations = self.tracker.update(
                         detections
+                    )
+
+                    identity_assignments = self.identity_resolver.update(
+                        frame_index=video_frame.frame_index,
+                        observations=track_observations,
                     )
 
                     events = self.event_extractor.update(
@@ -225,6 +261,10 @@ class VideoDetectionPipeline:
                             track_observation_to_dict(observation)
                             for observation in track_observations
                         ],
+                        "identities": [
+                            identity_assignment_to_dict(assignment)
+                            for assignment in identity_assignments
+                        ],
                         "events": [
                             world_event_to_dict(event)
                             for event in events
@@ -241,6 +281,7 @@ class VideoDetectionPipeline:
                             annotate_frame(
                                 video_frame.image,
                                 track_observations,
+                                identity_assignments,
                             )
                         )
 
@@ -248,6 +289,9 @@ class VideoDetectionPipeline:
                     detections_emitted += len(detections)
                     track_observations_emitted += len(
                         track_observations
+                    )
+                    identity_assignments_emitted += len(
+                        identity_assignments
                     )
                     events_emitted += len(events)
         finally:
@@ -260,6 +304,7 @@ class VideoDetectionPipeline:
             frames_processed=frames_processed,
             detections_emitted=detections_emitted,
             track_observations_emitted=track_observations_emitted,
+            identity_assignments_emitted=identity_assignments_emitted,
             events_emitted=events_emitted,
             observations_path=observations_path,
             annotated_video_path=annotated_video_path,
