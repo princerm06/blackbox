@@ -56,6 +56,62 @@ def _reobservation_to_dict(plan) -> dict[str, object]:
     }
 
 
+
+def _belief_value(beliefs, predicate: str):
+    return next(
+        (
+            belief
+            for belief in beliefs
+            if belief.predicate == predicate
+        ),
+        None,
+    )
+
+
+def _object_summary(world_state, object_id: str) -> dict[str, object]:
+    beliefs = world_state.beliefs_for(object_id)
+    visibility = _belief_value(beliefs, "CURRENT_VISIBILITY")
+    last_bbox = _belief_value(beliefs, "LAST_OBSERVED_BBOX")
+    uncertainty = world_state.uncertainty_for(object_id)
+
+    return {
+        "object_id": object_id,
+        "class_name": world_state.object_class(object_id),
+        "visibility": visibility.value if visibility is not None else "unknown",
+        "visibility_confidence": (
+            visibility.confidence if visibility is not None else 0.0
+        ),
+        "last_observed_bbox": (
+            last_bbox.value if last_bbox is not None else None
+        ),
+        "last_observed_frame": (
+            last_bbox.updated_frame_index
+            if last_bbox is not None
+            else None
+        ),
+        "last_observed_timestamp_ms": (
+            last_bbox.updated_timestamp_ms
+            if last_bbox is not None
+            else None
+        ),
+        "has_uncertainty": bool(uncertainty),
+    }
+
+
+def _event_to_dict(object_id, event) -> dict[str, object]:
+    return {
+        "object_id": object_id,
+        "event_type": event.event_type.value,
+        "frame_index": event.frame_index,
+        "timestamp_ms": event.timestamp_ms,
+        "class_name": event.class_name,
+        "confidence": event.confidence,
+        "provenance": event.provenance.value,
+        "metadata": event.metadata,
+        "related_track_ids": list(event.related_track_ids),
+    }
+
+
 def create_app(
     store: SessionStore | None = None,
     processor: SessionVideoProcessor | None = None,
@@ -182,6 +238,42 @@ def create_app(
                 for target in session.targets.enabled_targets()
             ],
             "summary": processing_summary_to_dict(processed.summary),
+        }
+
+    @app.get("/sessions/{session_id}/runs/{run_id}/objects")
+    def list_run_objects(
+        session_id: str,
+        run_id: str,
+    ) -> dict[str, object]:
+        try:
+            sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="run not found") from error
+
+        return {
+            "objects": [
+                _object_summary(run.world_state, object_id)
+                for object_id in run.world_state.all_object_ids()
+            ]
+        }
+
+    @app.get("/sessions/{session_id}/runs/{run_id}/events")
+    def list_run_events(
+        session_id: str,
+        run_id: str,
+    ) -> dict[str, object]:
+        try:
+            sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="run not found") from error
+
+        return {
+            "events": [
+                _event_to_dict(object_id, event)
+                for object_id, event in run.world_state.all_events()
+            ]
         }
 
     @app.get(
