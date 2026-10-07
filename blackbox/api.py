@@ -5,9 +5,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from blackbox.app_processing import (
+    RunStore,
     SessionVideoProcessor,
     processing_summary_to_dict,
 )
+from blackbox.reasoning.query import BeliefQueryEngine
+from blackbox.reasoning.reobserve import ReobservationPlanner
 from blackbox.sessions import SessionStore, target_to_dict
 
 
@@ -20,13 +23,48 @@ class SetTargetEnabledRequest(BaseModel):
     enabled: bool
 
 
+def _answer_to_dict(answer) -> dict[str, object]:
+    return {
+        "subject_object_id": answer.subject_object_id,
+        "answer": answer.answer,
+        "confidence": answer.confidence,
+        "provenance": answer.provenance,
+        "primary_hypothesis": answer.primary_hypothesis,
+        "alternatives": [
+            {"hypothesis": value, "weight": weight}
+            for value, weight in answer.alternatives
+        ],
+        "evidence": list(answer.evidence),
+        "caveats": list(answer.caveats),
+    }
+
+
+def _reobservation_to_dict(plan) -> dict[str, object]:
+    return {
+        "subject_object_id": plan.subject_object_id,
+        "should_reobserve": plan.should_reobserve,
+        "uncertainty": plan.uncertainty,
+        "rationale": plan.rationale,
+        "targets": [
+            {
+                "target": target.target,
+                "score": target.score,
+                "rationale": target.rationale,
+            }
+            for target in plan.targets
+        ],
+    }
+
+
 def create_app(
     store: SessionStore | None = None,
     processor: SessionVideoProcessor | None = None,
+    run_store: RunStore | None = None,
     workspace_root: Path = Path("runs") / "app",
 ) -> FastAPI:
     sessions = store or SessionStore()
     video_processor = processor or SessionVideoProcessor()
+    runs = run_store or RunStore()
     app = FastAPI(title="BlackBox", version="0.1.0")
 
     @app.get("/health")
@@ -126,13 +164,15 @@ def create_app(
         input_path.write_bytes(content)
 
         try:
-            summary = video_processor.process(
+            processed = video_processor.process(
                 registry=session.targets,
                 input_path=input_path,
                 output_dir=run_dir,
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+        runs.put(session_id, run_id, processed)
 
         return {
             "run_id": run_id,
@@ -141,7 +181,55 @@ def create_app(
                 target_to_dict(target)
                 for target in session.targets.enabled_targets()
             ],
-            "summary": processing_summary_to_dict(summary),
+            "summary": processing_summary_to_dict(processed.summary),
+        }
+
+    @app.get(
+        "/sessions/{session_id}/runs/{run_id}/targets/{target_id}/where"
+    )
+    def where_is_target(
+        session_id: str,
+        run_id: str,
+        target_id: str,
+    ) -> dict[str, object]:
+        try:
+            session = sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+            target = next(
+                target
+                for target in session.targets.targets()
+                if target.target_id == target_id
+            )
+        except (KeyError, StopIteration) as error:
+            raise HTTPException(status_code=404, detail="target or run not found") from error
+
+        object_ids = run.world_state.object_ids_for_class(target.prompt)
+        if not object_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"no detected object matched target prompt "
+                    f"{target.prompt!r} in this run"
+                ),
+            )
+
+        object_id = object_ids[0]
+        answer = BeliefQueryEngine(run.world_state).where_is(object_id)
+        reobservation = ReobservationPlanner(
+            run.world_state
+        ).plan_for(object_id)
+
+        return {
+            "target": target_to_dict(target),
+            "object_id": object_id,
+            "answer": _answer_to_dict(answer),
+            "reobservation": _reobservation_to_dict(reobservation),
+            "matching_object_count": len(object_ids),
+            "ambiguity": (
+                "multiple physical objects matched this visual concept"
+                if len(object_ids) > 1
+                else None
+            ),
         }
 
     return app
