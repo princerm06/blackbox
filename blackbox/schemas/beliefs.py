@@ -10,7 +10,7 @@ class BeliefProvenance(str, Enum):
 
 @dataclass(frozen=True)
 class ObjectStateHypothesis:
-    subject_track_id: str
+    subject_object_id: str
     predicate: str
     value: Any
     confidence: float
@@ -18,3 +18,4 @@ class ObjectStateHypothesis:
     updated_frame_index: int
     updated_timestamp_ms: int
     supporting_event_types: tuple[str, ...]
+    evidence_track_ids: tuple[str, ...]
