@@ -420,8 +420,16 @@ class WorldStateProjector:
                 if relation.first_object_id == object_id
                 else relation.first_object_id
             )
+            relevant_relation = self._relevant_relation(
+                object_id,
+                other_object_id,
+                history,
+            )
+            if relevant_relation is None:
+                continue
+
             value = f"associated_with:{other_object_id}"
-            score = 0.45 + (0.55 * relation.confidence)
+            score = 0.45 + (0.55 * relevant_relation.confidence)
 
             candidate_scores[value] = max(
                 candidate_scores.get(value, 0.0),
@@ -429,7 +437,7 @@ class WorldStateProjector:
             )
             candidate_rationales.setdefault(value, []).append(
                 "The candidate object had a recent spatial association "
-                "with the hidden object."
+                "relevant to the current unseen episode."
             )
 
         for signal in signals:
