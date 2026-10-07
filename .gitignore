@@ -12,3 +12,7 @@ data/samples/*.mp4
 data/samples/*.mov
 data/samples/*.avi
 !data/samples/.gitkeep
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
