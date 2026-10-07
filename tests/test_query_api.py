@@ -68,6 +68,7 @@ class QueryableProcessor:
                 annotated_video_path=None,
             ),
             world_state=world_state,
+            source_video_path=input_path,
         )
 
 
