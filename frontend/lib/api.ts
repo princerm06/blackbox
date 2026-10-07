@@ -31,6 +31,13 @@ export type TimelineEvent = {
 export type RunSnapshot = {
   session_id: string;
   run_id: string;
+  summary: {
+    frames_processed: number;
+    detections_emitted: number;
+    track_observations_emitted: number;
+    identity_assignments_emitted: number;
+    events_emitted: number;
+  };
   objects: ObjectSummary[];
   events: TimelineEvent[];
   media: {
