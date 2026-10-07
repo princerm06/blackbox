@@ -1,4 +1,4 @@
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -13,9 +13,39 @@ from blackbox.perception.pipeline import (
     VideoDetectionPipeline,
 )
 from blackbox.perception.targets import TargetRegistry
+from blackbox.world.projector import WorldStateProjector
 
 
 DetectorFactory = Callable[[TargetRegistry], Detector]
+
+
+@dataclass(frozen=True)
+class ProcessedRun:
+    summary: ProcessingSummary
+    world_state: WorldStateProjector
+
+
+class RunStore:
+    """Keeps processed run state available to the first app API."""
+
+    def __init__(self) -> None:
+        self._runs: dict[tuple[str, str], ProcessedRun] = {}
+
+    def put(
+        self,
+        session_id: str,
+        run_id: str,
+        run: ProcessedRun,
+    ) -> None:
+        self._runs[(session_id, run_id)] = run
+
+    def get(self, session_id: str, run_id: str) -> ProcessedRun:
+        try:
+            return self._runs[(session_id, run_id)]
+        except KeyError as error:
+            raise KeyError(
+                f"unknown run_id for session: {run_id}"
+            ) from error
 
 
 def default_detector_factory(registry: TargetRegistry) -> Detector:
@@ -41,18 +71,26 @@ class SessionVideoProcessor:
         registry: TargetRegistry,
         input_path: Path,
         output_dir: Path,
-    ) -> ProcessingSummary:
+    ) -> ProcessedRun:
         if not registry.enabled_targets():
             raise ValueError(
                 "at least one enabled tracking target is required"
             )
 
         detector = self.detector_factory(registry)
-        pipeline = VideoDetectionPipeline(detector=detector)
-        return pipeline.process(
+        world_state = WorldStateProjector()
+        pipeline = VideoDetectionPipeline(
+            detector=detector,
+            world_state=world_state,
+        )
+        summary = pipeline.process(
             input_path=input_path,
             output_dir=output_dir,
             write_annotated_video=True,
+        )
+        return ProcessedRun(
+            summary=summary,
+            world_state=world_state,
         )
 
 
