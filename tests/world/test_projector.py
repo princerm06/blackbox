@@ -3,6 +3,10 @@ from blackbox.schemas.events import (
     EventType,
     WorldEvent,
 )
+from blackbox.schemas.identity import (
+    IdentityAssignment,
+    IdentityProvenance,
+)
 from blackbox.schemas.perception import BoundingBox, TrackObservation
 from blackbox.world.projector import WorldStateProjector
 
@@ -23,17 +27,33 @@ def observation(
     )
 
 
+def assignment(
+    track_id: str = "track-1",
+    object_id: str = "object-1",
+) -> IdentityAssignment:
+    obs = observation(track_id)
+    return IdentityAssignment(
+        object_id=object_id,
+        track_id=track_id,
+        class_name=obs.class_name,
+        confidence=1.0,
+        provenance=IdentityProvenance.OBSERVED_TRACK,
+        observation=obs,
+    )
+
+
 def event(
     event_type: EventType,
     frame_index: int,
     timestamp_ms: int,
-    provenance: EventProvenance,
+    track_id: str = "track-1",
+    provenance: EventProvenance = EventProvenance.OBSERVED,
 ) -> WorldEvent:
     return WorldEvent(
         event_type=event_type,
         frame_index=frame_index,
         timestamp_ms=timestamp_ms,
-        subject_track_id="track-1",
+        subject_track_id=track_id,
         class_name="backpack",
         confidence=0.9,
         provenance=provenance,
@@ -41,24 +61,24 @@ def event(
     )
 
 
-def test_projector_keeps_event_history() -> None:
+def test_projector_keeps_event_history_by_object_id() -> None:
     projector = WorldStateProjector()
 
     appeared = event(
         EventType.OBJECT_APPEARED,
         0,
         0,
-        EventProvenance.OBSERVED,
     )
 
     projector.update(
         frame_index=0,
         timestamp_ms=0,
-        observations=[observation()],
+        identity_assignments=[assignment()],
         events=[appeared],
     )
 
-    assert projector.history_for("track-1") == (appeared,)
+    assert projector.history_for("object-1") == (appeared,)
+    assert projector.tracks_for("object-1") == ("track-1",)
 
 
 def test_projector_preserves_last_observed_evidence() -> None:
@@ -67,18 +87,17 @@ def test_projector_preserves_last_observed_evidence() -> None:
     projector.update(
         frame_index=0,
         timestamp_ms=0,
-        observations=[observation()],
+        identity_assignments=[assignment()],
         events=[
             event(
                 EventType.OBJECT_APPEARED,
                 0,
                 0,
-                EventProvenance.OBSERVED,
             )
         ],
     )
 
-    beliefs = projector.beliefs_for("track-1")
+    beliefs = projector.beliefs_for("object-1")
 
     bbox_belief = next(
         belief
@@ -86,8 +105,10 @@ def test_projector_preserves_last_observed_evidence() -> None:
         if belief.predicate == "LAST_OBSERVED_BBOX"
     )
 
+    assert bbox_belief.subject_object_id == "object-1"
     assert bbox_belief.provenance.value == "observed"
     assert bbox_belief.value["x1"] == 10
+    assert bbox_belief.evidence_track_ids == ("track-1",)
 
 
 def test_disappearance_does_not_erase_last_observation() -> None:
@@ -96,13 +117,12 @@ def test_disappearance_does_not_erase_last_observation() -> None:
     projector.update(
         frame_index=0,
         timestamp_ms=0,
-        observations=[observation()],
+        identity_assignments=[assignment()],
         events=[
             event(
                 EventType.OBJECT_APPEARED,
                 0,
                 0,
-                EventProvenance.OBSERVED,
             )
         ],
     )
@@ -110,18 +130,18 @@ def test_disappearance_does_not_erase_last_observation() -> None:
     projector.update(
         frame_index=1,
         timestamp_ms=33,
-        observations=[],
+        identity_assignments=[],
         events=[
             event(
                 EventType.OBJECT_DISAPPEARED,
                 1,
                 33,
-                EventProvenance.INFERRED,
+                provenance=EventProvenance.INFERRED,
             )
         ],
     )
 
-    beliefs = projector.beliefs_for("track-1")
+    beliefs = projector.beliefs_for("object-1")
 
     predicates = {
         belief.predicate: belief
@@ -134,3 +154,48 @@ def test_disappearance_does_not_erase_last_observation() -> None:
         predicates["CURRENT_VISIBILITY"].provenance.value
         == "inferred"
     )
+
+
+def test_new_track_can_extend_same_object_history() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[assignment("track-1", "object-1")],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+                track_id="track-1",
+            )
+        ],
+    )
+
+    projector.update(
+        frame_index=5,
+        timestamp_ms=165,
+        identity_assignments=[assignment("track-2", "object-1")],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                5,
+                165,
+                track_id="track-2",
+            )
+        ],
+    )
+
+    assert projector.tracks_for("object-1") == (
+        "track-1",
+        "track-2",
+    )
+
+    beliefs = projector.beliefs_for("object-1")
+    for belief in beliefs:
+        assert belief.subject_object_id == "object-1"
+        assert belief.evidence_track_ids == (
+            "track-1",
+            "track-2",
+        )
