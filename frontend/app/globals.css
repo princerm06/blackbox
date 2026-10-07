@@ -429,3 +429,33 @@ footer {
     min-height: 300px;
   }
 }
+
+
+.targetInfo {
+  min-width: 0;
+}
+
+.targetActions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 6px !important;
+}
+
+.targetAction {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
+.targetAction:hover {
+  color: var(--text);
+  border-color: #46515d;
+}
+
+.dangerAction:hover {
+  color: var(--danger);
+  border-color: rgba(242, 166, 166, 0.35);
+}
