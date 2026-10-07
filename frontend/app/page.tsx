@@ -28,6 +28,7 @@ export default function HomePage() {
   const [run, setRun] = useState<RunSnapshot | null>(null);
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [queryTargetId, setQueryTargetId] = useState("");
+  const [question, setQuestion] = useState("");
   const [status, setStatus] = useState("Ready");
   const [mediaMode, setMediaMode] = useState<"annotated" | "source">("annotated");
   const [error, setError] = useState<string | null>(null);
@@ -149,15 +150,56 @@ export default function HomePage() {
     }
   }
 
-  async function handleWhereQuery() {
-    if (!sessionId || !run || !queryTargetId) {
-      setError("Process a run and choose a tracked object first.");
+  function resolveQuestionTarget() {
+    const enabledTargets = targets.filter((target) => target.enabled);
+    if (queryTargetId) {
+      const selected = enabledTargets.find(
+        (target) => target.target_id === queryTargetId,
+      );
+      if (selected) return selected;
+    }
+
+    const normalized = question.toLowerCase();
+    const mentioned = enabledTargets.find((target) => {
+      const displayName = target.display_name.toLowerCase();
+      const promptName = target.prompt.toLowerCase();
+      return (
+        normalized.includes(displayName) ||
+        normalized.includes(promptName)
+      );
+    });
+
+    if (mentioned) return mentioned;
+    if (enabledTargets.length === 1) return enabledTargets[0];
+    return null;
+  }
+
+  async function handleWhereQuery(event?: FormEvent) {
+    event?.preventDefault();
+    const target = resolveQuestionTarget();
+
+    if (!sessionId || !run || !target) {
+      setError(
+        "Process a run, then choose or mention one tracked object.",
+      );
       return;
     }
+
+    if (
+      question.trim() &&
+      !/where|last seen|location|find/i.test(question)
+    ) {
+      setError(
+        "The current demo supports location and last-seen questions first.",
+      );
+      return;
+    }
+
+    setQueryTargetId(target.target_id);
     setError(null);
     setStatus("Checking memory…");
     try {
-      const result = await whereIs(sessionId, run.run_id, queryTargetId);
+      const result = await whereIs(sessionId, run.run_id, target.target_id);
       setQueryResult(result);
       setStatus("Answer ready");
     } catch (err) {
@@ -260,25 +302,37 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="queryRow">
-              <select
-                value={queryTargetId}
-                onChange={(event) => setQueryTargetId(event.target.value)}
-              >
-                <option value="">Choose an object</option>
-                {targets.filter((target) => target.enabled).map((target) => (
-                  <option key={target.target_id} value={target.target_id}>
-                    {target.display_name}
-                  </option>
-                ))}
-              </select>
+            <form className="queryComposer" onSubmit={handleWhereQuery}>
+              <input
+                className="questionInput"
+                placeholder="Where are my keys?"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+              />
               <button
                 className="button"
-                onClick={handleWhereQuery}
-                disabled={!run || !queryTargetId}
+                type="submit"
+                disabled={!run || targets.filter((target) => target.enabled).length === 0}
               >
-                Where is it?
+                Ask
               </button>
+            </form>
+
+            <div className="queryTargets">
+              {targets.filter((target) => target.enabled).map((target) => (
+                <button
+                  key={target.target_id}
+                  type="button"
+                  className={
+                    queryTargetId === target.target_id
+                      ? "queryTarget activeQueryTarget"
+                      : "queryTarget"
+                  }
+                  onClick={() => setQueryTargetId(target.target_id)}
+                >
+                  {target.display_name}
+                </button>
+              ))}
             </div>
 
             {queryResult ? (
@@ -343,8 +397,8 @@ export default function HomePage() {
             ) : (
               <div className="emptyAnswer">
                 {selectedTarget
-                  ? "Ask about " + selectedTarget.display_name + " after processing a scene."
-                  : "Select a tracked object to query its visual memory."}
+                  ? "Ask a location question about " + selectedTarget.display_name + "."
+                  : "Ask where a tracked object is, or select one above."}
               </div>
             )}
           </section>
