@@ -77,6 +77,7 @@ def test_pipeline_emits_tracked_observations(
     assert summary.frames_processed == 4
     assert summary.detections_emitted == 4
     assert summary.track_observations_emitted == 4
+    assert summary.events_emitted == 1
     assert summary.annotated_video_path is None
     assert summary.observations_path.exists()
 
@@ -107,6 +108,8 @@ def test_pipeline_emits_tracked_observations(
         first_record["tracks"][0]["class_name"]
         == "backpack"
     )
+    assert first_record["events"][0]["event_type"] == "OBJECT_APPEARED"
+    assert first_record["events"][0]["provenance"] == "observed"
 
     assert {
         record["tracks"][0]["track_id"]
