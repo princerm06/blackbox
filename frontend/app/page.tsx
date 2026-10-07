@@ -130,6 +130,16 @@ export default function HomePage() {
     }
   }
 
+  function handleNewScene() {
+    setRun(null);
+    setVideo(null);
+    setQueryResult(null);
+    setQuestion("");
+    setMediaMode("annotated");
+    setError(null);
+    setStatus("Ready for another scene");
+  }
+
   async function handleProcess() {
     if (!video) {
       setError("Choose a video first.");
@@ -279,19 +289,46 @@ export default function HomePage() {
             )}
 
             <div className="videoActions">
-              <button
-                className="button buttonPrimary"
-                onClick={handleProcess}
-                disabled={!video || targets.filter((target) => target.enabled).length === 0}
-              >
-                Process scene
-              </button>
+              {run ? (
+                <button className="button" onClick={handleNewScene}>
+                  New scene
+                </button>
+              ) : (
+                <button
+                  className="button buttonPrimary"
+                  onClick={handleProcess}
+                  disabled={!video || targets.filter((target) => target.enabled).length === 0}
+                >
+                  Process scene
+                </button>
+              )}
               <span className="muted">
                 {targets.filter((target) => target.enabled).length === 0
                   ? "Add or enable at least one tracked object."
                   : targets.filter((target) => target.enabled).length + " target" + (targets.filter((target) => target.enabled).length === 1 ? "" : "s") + " active"}
               </span>
             </div>
+
+            {run && (
+              <div className="runStats">
+                <div>
+                  <span>Frames</span>
+                  <strong>{run.summary.frames_processed}</strong>
+                </div>
+                <div>
+                  <span>Detections</span>
+                  <strong>{run.summary.detections_emitted}</strong>
+                </div>
+                <div>
+                  <span>Tracks</span>
+                  <strong>{run.summary.track_observations_emitted}</strong>
+                </div>
+                <div>
+                  <span>Events</span>
+                  <strong>{run.summary.events_emitted}</strong>
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="panel memoryPanel">
@@ -355,9 +392,17 @@ export default function HomePage() {
                   <div className="detailBlock">
                     <span className="detailLabel">Alternatives</span>
                     {queryResult.answer.alternatives.map((item) => (
-                      <div className="hypothesisRow" key={item.hypothesis}>
-                        <span>{item.hypothesis.replaceAll("_", " ")}</span>
-                        <strong>{Math.round(item.weight * 100)}%</strong>
+                      <div className="hypothesisItem" key={item.hypothesis}>
+                        <div className="hypothesisRow">
+                          <span>{item.hypothesis.replaceAll("_", " ")}</span>
+                          <strong>{Math.round(item.weight * 100)}%</strong>
+                        </div>
+                        <div className="confidenceTrack">
+                          <div
+                            className="confidenceFill"
+                            style={{ width: Math.round(item.weight * 100) + "%" }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -474,13 +519,19 @@ export default function HomePage() {
               ) : (
                 run.objects.map((object) => (
                   <div className="objectRow" key={object.object_id}>
-                    <div>
+                    <div className="objectInfo">
                       <strong>{object.class_name ?? "unknown"}</strong>
                       <span>
                         {object.visibility === "observed"
                           ? "currently observed"
                           : "not currently observed"}
                       </span>
+                      <div className="confidenceTrack objectConfidence">
+                        <div
+                          className="confidenceFill"
+                          style={{ width: Math.round(object.visibility_confidence * 100) + "%" }}
+                        />
+                      </div>
                     </div>
                     <span className={object.has_uncertainty ? "uncertain" : "stable"}>
                       {object.has_uncertainty ? "uncertain" : "grounded"}
