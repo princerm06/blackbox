@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "opencv-python>=4.10",
     "numpy>=2.0",
+    "ultralytics>=8.3",
 ]
 
 [project.optional-dependencies]
