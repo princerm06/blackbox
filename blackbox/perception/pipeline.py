@@ -13,6 +13,7 @@ from blackbox.perception.video import VideoReader
 from blackbox.schemas.beliefs import ObjectStateHypothesis
 from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.identity import IdentityAssignment
+from blackbox.schemas.opportunities import OpportunitySignal
 from blackbox.schemas.perception import Detection, TrackObservation
 from blackbox.schemas.uncertainty import HypothesisDistribution
 from blackbox.world.projector import WorldStateProjector
@@ -100,6 +101,21 @@ def belief_to_dict(
         "evidence_track_ids": list(
             belief.evidence_track_ids
         ),
+    }
+
+
+def opportunity_to_dict(
+    signal: OpportunitySignal,
+) -> dict[str, object]:
+    return {
+        "target_object_id": signal.target_object_id,
+        "signal_type": signal.signal_type.value,
+        "strength": signal.strength,
+        "frame_index": signal.frame_index,
+        "timestamp_ms": signal.timestamp_ms,
+        "source_object_id": signal.source_object_id,
+        "source_track_id": signal.source_track_id,
+        "rationale": signal.rationale,
     }
 
 
@@ -274,6 +290,17 @@ class VideoDetectionPipeline:
                         in self.world_state.all_beliefs().items()
                     }
 
+                    opportunities = {
+                        object_id: [
+                            opportunity_to_dict(signal)
+                            for signal in self.world_state.opportunities_for(
+                                object_id
+                            )
+                        ]
+                        for object_id in self.world_state.all_beliefs()
+                        if self.world_state.opportunities_for(object_id)
+                    }
+
                     uncertainty = {
                         object_id: [
                             uncertainty_to_dict(distribution)
@@ -303,6 +330,7 @@ class VideoDetectionPipeline:
                             for event in events
                         ],
                         "beliefs": beliefs,
+                        "opportunities": opportunities,
                         "uncertainty": uncertainty,
                     }
 
