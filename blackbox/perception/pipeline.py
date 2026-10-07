@@ -9,8 +9,10 @@ from blackbox.events.extractor import EventExtractor
 from blackbox.perception.detector import Detector
 from blackbox.perception.tracker import IoUTracker, Tracker
 from blackbox.perception.video import VideoReader
+from blackbox.schemas.beliefs import ObjectStateHypothesis
 from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.perception import Detection, TrackObservation
+from blackbox.world.projector import WorldStateProjector
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,23 @@ def world_event_to_dict(event: WorldEvent) -> dict[str, object]:
     }
 
 
+def belief_to_dict(
+    belief: ObjectStateHypothesis,
+) -> dict[str, object]:
+    return {
+        "subject_track_id": belief.subject_track_id,
+        "predicate": belief.predicate,
+        "value": belief.value,
+        "confidence": belief.confidence,
+        "provenance": belief.provenance.value,
+        "updated_frame_index": belief.updated_frame_index,
+        "updated_timestamp_ms": belief.updated_timestamp_ms,
+        "supporting_event_types": list(
+            belief.supporting_event_types
+        ),
+    }
+
+
 def annotate_frame(
     frame: np.ndarray,
     observations: list[TrackObservation],
@@ -114,10 +133,12 @@ class VideoDetectionPipeline:
         detector: Detector,
         tracker: Tracker | None = None,
         event_extractor: EventExtractor | None = None,
+        world_state: WorldStateProjector | None = None,
     ):
         self.detector = detector
         self.tracker = tracker or IoUTracker()
         self.event_extractor = event_extractor or EventExtractor()
+        self.world_state = world_state or WorldStateProjector()
 
     def process(
         self,
@@ -177,6 +198,22 @@ class VideoDetectionPipeline:
                         observations=track_observations,
                     )
 
+                    self.world_state.update(
+                        frame_index=video_frame.frame_index,
+                        timestamp_ms=video_frame.timestamp_ms,
+                        observations=track_observations,
+                        events=events,
+                    )
+
+                    beliefs = {
+                        track_id: [
+                            belief_to_dict(belief)
+                            for belief in track_beliefs
+                        ]
+                        for track_id, track_beliefs
+                        in self.world_state.all_beliefs().items()
+                    }
+
                     record = {
                         "frame_index": video_frame.frame_index,
                         "timestamp_ms": video_frame.timestamp_ms,
@@ -192,6 +229,7 @@ class VideoDetectionPipeline:
                             world_event_to_dict(event)
                             for event in events
                         ],
+                        "beliefs": beliefs,
                     }
 
                     output_file.write(
