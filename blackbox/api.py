@@ -1,6 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from blackbox.app_processing import (
+    SessionVideoProcessor,
+    processing_summary_to_dict,
+)
 from blackbox.sessions import SessionStore, target_to_dict
 
 
@@ -13,8 +20,13 @@ class SetTargetEnabledRequest(BaseModel):
     enabled: bool
 
 
-def create_app(store: SessionStore | None = None) -> FastAPI:
+def create_app(
+    store: SessionStore | None = None,
+    processor: SessionVideoProcessor | None = None,
+    workspace_root: Path = Path("runs") / "app",
+) -> FastAPI:
     sessions = store or SessionStore()
+    video_processor = processor or SessionVideoProcessor()
     app = FastAPI(title="BlackBox", version="0.1.0")
 
     @app.get("/health")
@@ -85,6 +97,52 @@ def create_app(store: SessionStore | None = None) -> FastAPI:
             session.targets.unregister(target_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.post("/sessions/{session_id}/videos", status_code=201)
+    async def process_video(
+        session_id: str,
+        video: UploadFile = File(...),
+    ) -> dict[str, object]:
+        try:
+            session = sessions.get(session_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+        if not session.targets.enabled_targets():
+            raise HTTPException(
+                status_code=409,
+                detail="register at least one enabled tracking target first",
+            )
+
+        suffix = Path(video.filename or "video.mp4").suffix or ".mp4"
+        run_id = str(uuid4())
+        run_dir = workspace_root / session_id / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        input_path = run_dir / f"input{suffix}"
+
+        content = await video.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="uploaded video is empty")
+        input_path.write_bytes(content)
+
+        try:
+            summary = video_processor.process(
+                registry=session.targets,
+                input_path=input_path,
+                output_dir=run_dir,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return {
+            "run_id": run_id,
+            "session_id": session_id,
+            "targets": [
+                target_to_dict(target)
+                for target in session.targets.enabled_targets()
+            ],
+            "summary": processing_summary_to_dict(summary),
+        }
 
     return app
 
