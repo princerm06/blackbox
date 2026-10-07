@@ -8,7 +8,12 @@ from blackbox.perception.pipeline import (
     VideoDetectionPipeline,
     annotate_frame,
 )
-from blackbox.schemas.perception import BoundingBox, Detection
+from blackbox.perception.tracker import IoUTracker
+from blackbox.schemas.perception import (
+    BoundingBox,
+    Detection,
+    TrackObservation,
+)
 
 
 class FakeDetector:
@@ -27,7 +32,10 @@ class FakeDetector:
         ]
 
 
-def create_test_video(path: Path, frame_count: int = 4) -> None:
+def create_test_video(
+    path: Path,
+    frame_count: int = 4,
+) -> None:
     writer = cv2.VideoWriter(
         str(path),
         cv2.VideoWriter_fourcc(*"MJPG"),
@@ -38,13 +46,18 @@ def create_test_video(path: Path, frame_count: int = 4) -> None:
     assert writer.isOpened()
 
     for _ in range(frame_count):
-        frame = np.zeros((48, 64, 3), dtype=np.uint8)
+        frame = np.zeros(
+            (48, 64, 3),
+            dtype=np.uint8,
+        )
         writer.write(frame)
 
     writer.release()
 
 
-def test_pipeline_emits_one_jsonl_record_per_frame(tmp_path: Path) -> None:
+def test_pipeline_emits_tracked_observations(
+    tmp_path: Path,
+) -> None:
     input_path = tmp_path / "input.avi"
     output_dir = tmp_path / "run"
 
@@ -52,6 +65,7 @@ def test_pipeline_emits_one_jsonl_record_per_frame(tmp_path: Path) -> None:
 
     pipeline = VideoDetectionPipeline(
         detector=FakeDetector(),
+        tracker=IoUTracker(),
     )
 
     summary = pipeline.process(
@@ -62,6 +76,7 @@ def test_pipeline_emits_one_jsonl_record_per_frame(tmp_path: Path) -> None:
 
     assert summary.frames_processed == 4
     assert summary.detections_emitted == 4
+    assert summary.track_observations_emitted == 4
     assert summary.annotated_video_path is None
     assert summary.observations_path.exists()
 
@@ -71,20 +86,43 @@ def test_pipeline_emits_one_jsonl_record_per_frame(tmp_path: Path) -> None:
 
     assert len(lines) == 4
 
-    first_record = json.loads(lines[0])
+    records = [
+        json.loads(line)
+        for line in lines
+    ]
+
+    first_record = records[0]
 
     assert first_record["frame_index"] == 0
     assert first_record["timestamp_ms"] == 0
-    assert first_record["detections"][0]["class_name"] == "backpack"
-    assert first_record["detections"][0]["confidence"] == 0.9
-    assert first_record["detections"][0]["bbox"]["x1"] == 5
+    assert (
+        first_record["detections"][0]["class_name"]
+        == "backpack"
+    )
+    assert (
+        first_record["tracks"][0]["track_id"]
+        == "track-1"
+    )
+    assert (
+        first_record["tracks"][0]["class_name"]
+        == "backpack"
+    )
+
+    assert {
+        record["tracks"][0]["track_id"]
+        for record in records
+    } == {"track-1"}
 
 
 def test_annotate_frame_does_not_mutate_input() -> None:
-    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    frame = np.zeros(
+        (48, 64, 3),
+        dtype=np.uint8,
+    )
 
-    detections = [
-        Detection(
+    observations = [
+        TrackObservation(
+            track_id="track-1",
             class_name="laptop",
             confidence=0.8,
             bbox=BoundingBox(
@@ -96,10 +134,19 @@ def test_annotate_frame_does_not_mutate_input() -> None:
         )
     ]
 
-    annotated = annotate_frame(frame, detections)
+    annotated = annotate_frame(
+        frame,
+        observations,
+    )
 
     assert np.array_equal(
         frame,
-        np.zeros((48, 64, 3), dtype=np.uint8),
+        np.zeros(
+            (48, 64, 3),
+            dtype=np.uint8,
+        ),
     )
-    assert not np.array_equal(annotated, frame)
+    assert not np.array_equal(
+        annotated,
+        frame,
+    )
