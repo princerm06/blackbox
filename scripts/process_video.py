@@ -36,6 +36,7 @@ def main() -> None:
         "Track observations emitted: "
         f"{summary.track_observations_emitted}"
     )
+    print(f"Events emitted: {summary.events_emitted}")
     print(f"Observations: {summary.observations_path}")
 
     if summary.annotated_video_path is not None:
