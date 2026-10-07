@@ -513,3 +513,42 @@ footer {
   color: var(--text);
   font-size: 12px;
 }
+
+
+.queryComposer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px;
+  padding: 16px 20px 10px;
+}
+
+.questionInput {
+  min-width: 0;
+}
+
+.queryTargets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 20px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.queryTarget {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
+.queryTarget:hover {
+  color: var(--text);
+  border-color: #46515d;
+}
+
+.activeQueryTarget {
+  background: #171d23;
+  color: var(--text);
+}
