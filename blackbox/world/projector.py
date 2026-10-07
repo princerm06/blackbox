@@ -11,10 +11,12 @@ from blackbox.schemas.opportunities import (
     OpportunityType,
 )
 from blackbox.schemas.perception import TrackObservation
+from blackbox.schemas.relations import ObjectRelation
 from blackbox.schemas.uncertainty import (
     CompetingHypothesis,
     HypothesisDistribution,
 )
+from blackbox.world.relations import infer_spatial_relations
 
 
 _EVENT_OPPORTUNITY_STRENGTHS = {
@@ -54,14 +56,27 @@ class _ObjectHistory:
 class WorldStateProjector:
     """Projects event history into object-level beliefs and uncertainty.
 
-    The uncertainty updater is a deliberately simple heuristic baseline, not a
-    calibrated probability model. It exists so later experiments can measure
-    whether learned or calibrated belief evolution improves on it.
+    Relation-aware weighting is intentionally heuristic. Spatial association
+    only changes the strength of a change opportunity; it does not establish
+    containment, transfer, or causal interaction.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_relation_age_frames: int = 30,
+    ) -> None:
+        if max_relation_age_frames < 0:
+            raise ValueError(
+                "max_relation_age_frames must be non-negative"
+            )
+
+        self.max_relation_age_frames = max_relation_age_frames
         self._histories: dict[str, _ObjectHistory] = {}
         self._track_to_object: dict[str, str] = {}
+        self._latest_relations: dict[
+            tuple[str, str],
+            ObjectRelation,
+        ] = {}
         self._current_frame_index = 0
         self._current_timestamp_ms = 0
 
@@ -86,6 +101,18 @@ class WorldStateProjector:
             history.last_observation = assignment.observation
             history.last_frame_index = frame_index
             history.last_timestamp_ms = timestamp_ms
+
+        for relation in infer_spatial_relations(
+            assignments=identity_assignments,
+            frame_index=frame_index,
+            timestamp_ms=timestamp_ms,
+        ):
+            self._latest_relations[
+                self._relation_key(
+                    relation.first_object_id,
+                    relation.second_object_id,
+                )
+            ] = relation
 
         mapped_events: list[tuple[str, WorldEvent]] = []
 
@@ -124,7 +151,39 @@ class WorldStateProjector:
                 if signal_spec is None:
                     continue
 
-                signal_type, strength = signal_spec
+                signal_type, base_strength = signal_spec
+                relation = self._relevant_relation(
+                    target_object_id,
+                    source_object_id,
+                    target_history,
+                )
+
+                strength = base_strength
+                relation_type = None
+                relation_confidence = None
+
+                if relation is not None:
+                    relation_type = relation.relation_type.value
+                    relation_confidence = relation.confidence
+                    strength = min(
+                        0.45,
+                        base_strength * (1.0 + relation.confidence),
+                    )
+
+                if relation is None:
+                    rationale = (
+                        f"{event.event_type.value} occurred for "
+                        f"{source_object_id} while "
+                        f"{target_object_id} was unobserved."
+                    )
+                else:
+                    rationale = (
+                        f"{event.event_type.value} occurred for "
+                        f"{source_object_id} while "
+                        f"{target_object_id} was unobserved; the two "
+                        "objects had a recent spatial association, so "
+                        "this opportunity is weighted more strongly."
+                    )
 
                 target_history.opportunities.append(
                     OpportunitySignal(
@@ -135,11 +194,9 @@ class WorldStateProjector:
                         timestamp_ms=timestamp_ms,
                         source_object_id=source_object_id,
                         source_track_id=event.subject_track_id,
-                        rationale=(
-                            f"{event.event_type.value} occurred for "
-                            f"{source_object_id} while "
-                            f"{target_object_id} was unobserved."
-                        ),
+                        rationale=rationale,
+                        relation_type=relation_type,
+                        relation_confidence=relation_confidence,
                     )
                 )
 
@@ -160,6 +217,30 @@ class WorldStateProjector:
         if history is None:
             return ()
         return tuple(sorted(history.track_ids))
+
+    def relations_for(
+        self,
+        object_id: str,
+    ) -> tuple[ObjectRelation, ...]:
+        relations = [
+            relation
+            for relation in self._latest_relations.values()
+            if object_id in {
+                relation.first_object_id,
+                relation.second_object_id,
+            }
+        ]
+
+        return tuple(
+            sorted(
+                relations,
+                key=lambda relation: (
+                    relation.frame_index,
+                    relation.first_object_id,
+                    relation.second_object_id,
+                ),
+            )
+        )
 
     def opportunities_for(
         self,
@@ -334,6 +415,48 @@ class WorldStateProjector:
             for object_id in self._histories
             if self.uncertainty_for(object_id)
         }
+
+    def _relevant_relation(
+        self,
+        target_object_id: str,
+        source_object_id: str,
+        target_history: _ObjectHistory,
+    ) -> ObjectRelation | None:
+        relation = self._latest_relations.get(
+            self._relation_key(
+                target_object_id,
+                source_object_id,
+            )
+        )
+
+        if relation is None:
+            return None
+
+        if not target_history.events:
+            return None
+
+        disappearance = target_history.events[-1]
+
+        if relation.frame_index > disappearance.frame_index:
+            return None
+
+        age = disappearance.frame_index - relation.frame_index
+
+        if age > self.max_relation_age_frames:
+            return None
+
+        return relation
+
+    @staticmethod
+    def _relation_key(
+        first_object_id: str,
+        second_object_id: str,
+    ) -> tuple[str, str]:
+        return tuple(
+            sorted(
+                (first_object_id, second_object_id)
+            )
+        )
 
     @staticmethod
     def _is_currently_unobserved(
