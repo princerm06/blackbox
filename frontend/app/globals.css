@@ -552,3 +552,75 @@ footer {
   background: #171d23;
   color: var(--text);
 }
+
+
+.runStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  background: #0d1115;
+}
+
+.runStats div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px;
+  border-right: 1px solid var(--line);
+}
+
+.runStats div:last-child {
+  border-right: 0;
+}
+
+.runStats span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.runStats strong {
+  font-size: 14px;
+}
+
+.hypothesisItem {
+  margin-top: 9px;
+}
+
+.confidenceTrack {
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #20262d;
+  overflow: hidden;
+}
+
+.confidenceFill {
+  height: 100%;
+  border-radius: inherit;
+  background: #8ea0af;
+}
+
+.objectInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.objectConfidence {
+  width: min(150px, 100%);
+}
+
+@media (max-width: 560px) {
+  .runStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .runStats div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .runStats div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
