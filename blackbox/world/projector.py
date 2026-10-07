@@ -129,6 +129,16 @@ class WorldStateProjector:
                 _ObjectHistory(),
             )
             history.track_ids.add(event.subject_track_id)
+
+            if event.event_type == EventType.OBJECT_DISAPPEARED:
+                # A disappearance starts a new unseen episode. Evidence from
+                # earlier unseen episodes must not leak into this one.
+                history.opportunities.clear()
+            elif event.event_type == EventType.OBJECT_REAPPEARED:
+                # Reappearance closes the unseen episode. The historical
+                # events remain, but episode-scoped opportunities are stale.
+                history.opportunities.clear()
+
             history.events.append(event)
             mapped_events.append((object_id, event))
 
