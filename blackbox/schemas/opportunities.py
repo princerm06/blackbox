@@ -21,3 +21,5 @@ class OpportunitySignal:
     source_object_id: str | None
     source_track_id: str | None
     rationale: str
+    relation_type: str | None = None
+    relation_confidence: float | None = None
