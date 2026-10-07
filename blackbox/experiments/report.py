@@ -4,6 +4,10 @@ from dataclasses import asdict
 from pathlib import Path
 
 from blackbox.experiments.baselines import ChangeBaseline
+from blackbox.experiments.plots import (
+    write_metric_comparison_svg,
+    write_reliability_svg,
+)
 from blackbox.experiments.runner import evaluate_models, predict_cases
 from blackbox.experiments.schema import (
     BinaryPrediction,
@@ -137,6 +141,10 @@ def write_experiment_report(
                     }
                 )
 
+    calibration_series: list[
+        tuple[str, tuple[dict[str, float | int], ...]]
+    ] = []
+
     with (output_dir / "calibration.csv").open(
         "w",
         newline="",
@@ -159,6 +167,7 @@ def write_experiment_report(
                 predict_cases(model, cases),
                 bins=bins,
             )
+            calibration_series.append((model.name, rows))
             for row in rows:
                 writer.writerow(
                     {
@@ -166,5 +175,14 @@ def write_experiment_report(
                         **row,
                     }
                 )
+
+    write_metric_comparison_svg(
+        output_dir / "metric_comparison.svg",
+        evaluations,
+    )
+    write_reliability_svg(
+        output_dir / "reliability.svg",
+        tuple(calibration_series),
+    )
 
     return evaluations
