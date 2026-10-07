@@ -15,6 +15,7 @@ from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.opportunities import OpportunitySignal
 from blackbox.schemas.perception import Detection, TrackObservation
+from blackbox.schemas.relations import ObjectRelation
 from blackbox.schemas.uncertainty import HypothesisDistribution
 from blackbox.world.projector import WorldStateProjector
 
@@ -117,6 +118,22 @@ def opportunity_to_dict(
         "source_object_id": signal.source_object_id,
         "source_track_id": signal.source_track_id,
         "rationale": signal.rationale,
+        "relation_type": signal.relation_type,
+        "relation_confidence": signal.relation_confidence,
+    }
+
+
+def relation_to_dict(
+    relation: ObjectRelation,
+) -> dict[str, object]:
+    return {
+        "first_object_id": relation.first_object_id,
+        "second_object_id": relation.second_object_id,
+        "relation_type": relation.relation_type.value,
+        "confidence": relation.confidence,
+        "frame_index": relation.frame_index,
+        "timestamp_ms": relation.timestamp_ms,
+        "evidence_track_ids": list(relation.evidence_track_ids),
     }
 
 
@@ -302,6 +319,17 @@ class VideoDetectionPipeline:
                         if self.world_state.opportunities_for(object_id)
                     }
 
+                    relations = {
+                        object_id: [
+                            relation_to_dict(relation)
+                            for relation in self.world_state.relations_for(
+                                object_id
+                            )
+                        ]
+                        for object_id in self.world_state.all_beliefs()
+                        if self.world_state.relations_for(object_id)
+                    }
+
                     uncertainty = {
                         object_id: [
                             uncertainty_to_dict(distribution)
@@ -331,6 +359,7 @@ class VideoDetectionPipeline:
                             for event in events
                         ],
                         "beliefs": beliefs,
+                        "relations": relations,
                         "opportunities": opportunities,
                         "uncertainty": uncertainty,
                     }
