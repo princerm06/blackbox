@@ -493,6 +493,19 @@ class WorldStateProjector:
             updated_timestamp_ms=self._current_timestamp_ms,
         )
 
+    def object_ids_for_class(
+        self,
+        class_name: str,
+    ) -> tuple[str, ...]:
+        matches = []
+        for object_id, history in self._histories.items():
+            observation = history.last_observation
+            if observation is None:
+                continue
+            if observation.class_name == class_name:
+                matches.append(object_id)
+        return tuple(sorted(matches))
+
     def all_beliefs(
         self,
     ) -> dict[str, tuple[ObjectStateHypothesis, ...]]:
