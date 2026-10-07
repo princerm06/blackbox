@@ -7,6 +7,10 @@ from blackbox.schemas.beliefs import (
 from blackbox.schemas.events import EventType, WorldEvent
 from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.perception import TrackObservation
+from blackbox.schemas.uncertainty import (
+    CompetingHypothesis,
+    HypothesisDistribution,
+)
 
 
 @dataclass
@@ -147,10 +151,61 @@ class WorldStateProjector:
 
         return tuple(beliefs)
 
+    def uncertainty_for(
+        self,
+        object_id: str,
+    ) -> tuple[HypothesisDistribution, ...]:
+        history = self._histories.get(object_id)
+        if history is None or not history.events:
+            return ()
+
+        latest_event = history.events[-1]
+
+        if latest_event.event_type != EventType.OBJECT_DISAPPEARED:
+            return ()
+
+        distribution = HypothesisDistribution(
+            subject_object_id=object_id,
+            predicate="UNOBSERVED_CHANGE_STATE",
+            hypotheses=(
+                CompetingHypothesis(
+                    value="unchanged_since_last_observation",
+                    weight=0.5,
+                    provenance="baseline_prior",
+                    rationale=(
+                        "No post-disappearance evidence currently "
+                        "distinguishes unchanged from changed."
+                    ),
+                ),
+                CompetingHypothesis(
+                    value="changed_while_unobserved",
+                    weight=0.5,
+                    provenance="baseline_prior",
+                    rationale=(
+                        "No post-disappearance evidence currently "
+                        "distinguishes unchanged from changed."
+                    ),
+                ),
+            ),
+            updated_frame_index=latest_event.frame_index,
+            updated_timestamp_ms=latest_event.timestamp_ms,
+        )
+
+        return (distribution,)
+
     def all_beliefs(
         self,
     ) -> dict[str, tuple[ObjectStateHypothesis, ...]]:
         return {
             object_id: self.beliefs_for(object_id)
             for object_id in self._histories
+        }
+
+    def all_uncertainty(
+        self,
+    ) -> dict[str, tuple[HypothesisDistribution, ...]]:
+        return {
+            object_id: self.uncertainty_for(object_id)
+            for object_id in self._histories
+            if self.uncertainty_for(object_id)
         }
