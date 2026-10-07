@@ -34,6 +34,7 @@ Create a JSON file such as `data/episodes/manifest.json`:
     "target_class": "keys",
     "changed_while_unobserved": true,
     "final_location_label": "inside_backpack",
+    "evaluation_frame": 145,
     "notes": "Backpack moved after keys disappeared."
   }
 ]
@@ -54,3 +55,20 @@ For the polished demo:
 7. Show last direct observation, candidate hypotheses, uncertainty, and recommended re-observation target.
 
 A good demo should include at least one moment where BlackBox explicitly says it is uncertain rather than inventing a precise answer.
+
+
+## Choosing the evaluation frame
+
+Set `evaluation_frame` to the frame immediately before the clip reveals the ground-truth outcome. BlackBox is scored using only evidence available up to that frame.
+
+This matters because the final seconds of a controlled clip may deliberately reveal where the object actually ended up. Those reveal frames are for annotation, not for the model's prediction.
+
+After each episode has been processed into `runs/<episode_id>/observations.jsonl`, evaluate the real-world set with:
+
+```bash
+python scripts/evaluate_recorded_outputs.py \
+  --manifest data/episodes/manifest.json \
+  --runs-dir runs/episodes
+```
+
+The evaluator reports Brier score, NLL, and ECE against the recorded ground truth. If the requested target class was never detected, the episode fails explicitly instead of silently inventing a prediction.
