@@ -131,3 +131,69 @@ def test_where_query_reports_target_not_detected(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert "no detected object matched" in response.json()["detail"]
+
+
+
+def test_run_objects_endpoint_returns_status_summary(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/objects"
+    )
+
+    assert response.status_code == 200
+    objects = response.json()["objects"]
+    assert len(objects) == 1
+    assert objects[0]["object_id"] == "object-1"
+    assert objects[0]["class_name"] == "keys"
+    assert objects[0]["visibility"] == "observed"
+    assert objects[0]["last_observed_frame"] == 0
+    assert objects[0]["has_uncertainty"] is False
+
+
+def test_run_events_endpoint_returns_timeline(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/events"
+    )
+
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert len(events) == 1
+    assert events[0]["object_id"] == "object-1"
+    assert events[0]["event_type"] == "OBJECT_APPEARED"
+    assert events[0]["provenance"] == "observed"
+    assert events[0]["frame_index"] == 0
