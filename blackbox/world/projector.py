@@ -34,6 +34,10 @@ _EVENT_OPPORTUNITY_STRENGTHS = {
         OpportunityType.OTHER_OBJECT_REAPPEARED,
         0.04,
     ),
+    EventType.PERSON_OBJECT_INTERACTION: (
+        OpportunityType.PERSON_OBJECT_INTERACTION,
+        0.18,
+    ),
 }
 
 
