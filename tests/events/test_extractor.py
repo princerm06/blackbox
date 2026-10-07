@@ -10,10 +10,11 @@ def observation(
     x2: float,
     y2: float,
     confidence: float = 0.9,
+    class_name: str = "backpack",
 ) -> TrackObservation:
     return TrackObservation(
         track_id=track_id,
-        class_name="backpack",
+        class_name=class_name,
         confidence=confidence,
         bbox=BoundingBox(
             x1=x1,
@@ -142,3 +143,73 @@ def test_disappearance_is_not_repeated_every_frame() -> None:
     )
 
     assert events == []
+
+
+def test_person_object_overlap_emits_inferred_interaction_once() -> None:
+    extractor = EventExtractor(
+        interaction_overlap_threshold=0.15,
+    )
+
+    first = extractor.update(
+        frame_index=0,
+        timestamp_ms=0,
+        observations=[
+            observation(
+                "person-1",
+                0,
+                0,
+                100,
+                200,
+                class_name="person",
+            ),
+            observation(
+                "bag-1",
+                20,
+                80,
+                80,
+                160,
+                class_name="backpack",
+            ),
+        ],
+    )
+
+    interaction = next(
+        event
+        for event in first
+        if event.event_type
+        == EventType.PERSON_OBJECT_INTERACTION
+    )
+
+    assert interaction.subject_track_id == "bag-1"
+    assert interaction.related_track_ids == ("person-1",)
+    assert interaction.provenance.value == "inferred"
+    assert interaction.metadata["overlap_fraction_of_smaller"] >= 0.15
+
+    second = extractor.update(
+        frame_index=1,
+        timestamp_ms=33,
+        observations=[
+            observation(
+                "person-1",
+                0,
+                0,
+                100,
+                200,
+                class_name="person",
+            ),
+            observation(
+                "bag-1",
+                20,
+                80,
+                80,
+                160,
+                class_name="backpack",
+            ),
+        ],
+    )
+
+    assert not any(
+        event.event_type
+        == EventType.PERSON_OBJECT_INTERACTION
+        for event in second
+    )
