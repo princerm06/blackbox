@@ -5,69 +5,93 @@ from blackbox.schemas.beliefs import (
     ObjectStateHypothesis,
 )
 from blackbox.schemas.events import EventType, WorldEvent
+from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.perception import TrackObservation
 
 
 @dataclass
 class _ObjectHistory:
     events: list[WorldEvent] = field(default_factory=list)
+    track_ids: set[str] = field(default_factory=set)
     last_observation: TrackObservation | None = None
     last_frame_index: int | None = None
     last_timestamp_ms: int | None = None
 
 
 class WorldStateProjector:
-    """Minimal evidence-grounded projection over track histories."""
+    """Projects event history into beliefs keyed by persistent object ID."""
 
     def __init__(self) -> None:
         self._histories: dict[str, _ObjectHistory] = {}
+        self._track_to_object: dict[str, str] = {}
 
     def update(
         self,
         frame_index: int,
         timestamp_ms: int,
-        observations: list[TrackObservation],
+        identity_assignments: list[IdentityAssignment],
         events: list[WorldEvent],
     ) -> None:
-        for event in events:
-            history = self._histories.setdefault(
-                event.subject_track_id,
-                _ObjectHistory(),
-            )
-            history.events.append(event)
+        for assignment in identity_assignments:
+            self._track_to_object[assignment.track_id] = assignment.object_id
 
-        for observation in observations:
             history = self._histories.setdefault(
-                observation.track_id,
+                assignment.object_id,
                 _ObjectHistory(),
             )
-            history.last_observation = observation
+            history.track_ids.add(assignment.track_id)
+            history.last_observation = assignment.observation
             history.last_frame_index = frame_index
             history.last_timestamp_ms = timestamp_ms
 
+        for event in events:
+            object_id = self._track_to_object.get(
+                event.subject_track_id
+            )
+
+            if object_id is None:
+                continue
+
+            history = self._histories.setdefault(
+                object_id,
+                _ObjectHistory(),
+            )
+            history.track_ids.add(event.subject_track_id)
+            history.events.append(event)
+
     def history_for(
         self,
-        track_id: str,
+        object_id: str,
     ) -> tuple[WorldEvent, ...]:
-        history = self._histories.get(track_id)
+        history = self._histories.get(object_id)
         if history is None:
             return ()
         return tuple(history.events)
 
+    def tracks_for(
+        self,
+        object_id: str,
+    ) -> tuple[str, ...]:
+        history = self._histories.get(object_id)
+        if history is None:
+            return ()
+        return tuple(sorted(history.track_ids))
+
     def beliefs_for(
         self,
-        track_id: str,
+        object_id: str,
     ) -> tuple[ObjectStateHypothesis, ...]:
-        history = self._histories.get(track_id)
+        history = self._histories.get(object_id)
         if history is None:
             return ()
 
         beliefs: list[ObjectStateHypothesis] = []
+        evidence_track_ids = tuple(sorted(history.track_ids))
 
         if history.last_observation is not None:
             beliefs.append(
                 ObjectStateHypothesis(
-                    subject_track_id=track_id,
+                    subject_object_id=object_id,
                     predicate="LAST_OBSERVED_BBOX",
                     value={
                         "x1": history.last_observation.bbox.x1,
@@ -89,6 +113,7 @@ class WorldStateProjector:
                             EventType.OBJECT_REAPPEARED,
                         }
                     ),
+                    evidence_track_ids=evidence_track_ids,
                 )
             )
 
@@ -96,35 +121,29 @@ class WorldStateProjector:
             latest_event = history.events[-1]
 
             if latest_event.event_type == EventType.OBJECT_DISAPPEARED:
-                beliefs.append(
-                    ObjectStateHypothesis(
-                        subject_track_id=track_id,
-                        predicate="CURRENT_VISIBILITY",
-                        value="not_observed",
-                        confidence=latest_event.confidence,
-                        provenance=BeliefProvenance.INFERRED,
-                        updated_frame_index=latest_event.frame_index,
-                        updated_timestamp_ms=latest_event.timestamp_ms,
-                        supporting_event_types=(
-                            latest_event.event_type.value,
-                        ),
-                    )
-                )
+                visibility_value = "not_observed"
+                visibility_provenance = BeliefProvenance.INFERRED
+                visibility_confidence = latest_event.confidence
             else:
-                beliefs.append(
-                    ObjectStateHypothesis(
-                        subject_track_id=track_id,
-                        predicate="CURRENT_VISIBILITY",
-                        value="observed",
-                        confidence=1.0,
-                        provenance=BeliefProvenance.OBSERVED,
-                        updated_frame_index=latest_event.frame_index,
-                        updated_timestamp_ms=latest_event.timestamp_ms,
-                        supporting_event_types=(
-                            latest_event.event_type.value,
-                        ),
-                    )
+                visibility_value = "observed"
+                visibility_provenance = BeliefProvenance.OBSERVED
+                visibility_confidence = 1.0
+
+            beliefs.append(
+                ObjectStateHypothesis(
+                    subject_object_id=object_id,
+                    predicate="CURRENT_VISIBILITY",
+                    value=visibility_value,
+                    confidence=visibility_confidence,
+                    provenance=visibility_provenance,
+                    updated_frame_index=latest_event.frame_index,
+                    updated_timestamp_ms=latest_event.timestamp_ms,
+                    supporting_event_types=(
+                        latest_event.event_type.value,
+                    ),
+                    evidence_track_ids=evidence_track_ids,
                 )
+            )
 
         return tuple(beliefs)
 
@@ -132,6 +151,6 @@ class WorldStateProjector:
         self,
     ) -> dict[str, tuple[ObjectStateHypothesis, ...]]:
         return {
-            track_id: self.beliefs_for(track_id)
-            for track_id in self._histories
+            object_id: self.beliefs_for(object_id)
+            for object_id in self._histories
         }
