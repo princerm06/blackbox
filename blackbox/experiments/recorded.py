@@ -12,6 +12,7 @@ class RecordedEpisode:
     target_class: str
     changed_while_unobserved: bool
     final_location_label: str
+    evaluation_frame: int | None = None
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -23,6 +24,8 @@ class RecordedEpisode:
             raise ValueError("target_class must not be empty")
         if not self.final_location_label:
             raise ValueError("final_location_label must not be empty")
+        if self.evaluation_frame is not None and self.evaluation_frame < 0:
+            raise ValueError("evaluation_frame must be non-negative")
 
 
 def load_episode_manifest(path: Path) -> tuple[RecordedEpisode, ...]:
@@ -39,6 +42,11 @@ def load_episode_manifest(path: Path) -> tuple[RecordedEpisode, ...]:
                 item["changed_while_unobserved"]
             ),
             final_location_label=str(item["final_location_label"]),
+            evaluation_frame=(
+                int(item["evaluation_frame"])
+                if item.get("evaluation_frame") is not None
+                else None
+            ),
             notes=str(item.get("notes", "")),
         )
         for item in payload
