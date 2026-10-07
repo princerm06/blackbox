@@ -5,9 +5,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from blackbox.events.extractor import EventExtractor
 from blackbox.perception.detector import Detector
 from blackbox.perception.tracker import IoUTracker, Tracker
 from blackbox.perception.video import VideoReader
+from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.perception import Detection, TrackObservation
 
 
@@ -16,6 +18,7 @@ class ProcessingSummary:
     frames_processed: int
     detections_emitted: int
     track_observations_emitted: int
+    events_emitted: int
     observations_path: Path
     annotated_video_path: Path | None
 
@@ -46,6 +49,19 @@ def track_observation_to_dict(
             "x2": observation.bbox.x2,
             "y2": observation.bbox.y2,
         },
+    }
+
+
+def world_event_to_dict(event: WorldEvent) -> dict[str, object]:
+    return {
+        "event_type": event.event_type.value,
+        "frame_index": event.frame_index,
+        "timestamp_ms": event.timestamp_ms,
+        "subject_track_id": event.subject_track_id,
+        "class_name": event.class_name,
+        "confidence": event.confidence,
+        "provenance": event.provenance.value,
+        "metadata": event.metadata,
     }
 
 
@@ -97,9 +113,11 @@ class VideoDetectionPipeline:
         self,
         detector: Detector,
         tracker: Tracker | None = None,
+        event_extractor: EventExtractor | None = None,
     ):
         self.detector = detector
         self.tracker = tracker or IoUTracker()
+        self.event_extractor = event_extractor or EventExtractor()
 
     def process(
         self,
@@ -137,6 +155,7 @@ class VideoDetectionPipeline:
         frames_processed = 0
         detections_emitted = 0
         track_observations_emitted = 0
+        events_emitted = 0
 
         try:
             with observations_path.open(
@@ -152,6 +171,12 @@ class VideoDetectionPipeline:
                         detections
                     )
 
+                    events = self.event_extractor.update(
+                        frame_index=video_frame.frame_index,
+                        timestamp_ms=video_frame.timestamp_ms,
+                        observations=track_observations,
+                    )
+
                     record = {
                         "frame_index": video_frame.frame_index,
                         "timestamp_ms": video_frame.timestamp_ms,
@@ -162,6 +187,10 @@ class VideoDetectionPipeline:
                         "tracks": [
                             track_observation_to_dict(observation)
                             for observation in track_observations
+                        ],
+                        "events": [
+                            world_event_to_dict(event)
+                            for event in events
                         ],
                     }
 
@@ -182,6 +211,7 @@ class VideoDetectionPipeline:
                     track_observations_emitted += len(
                         track_observations
                     )
+                    events_emitted += len(events)
         finally:
             reader.close()
 
@@ -192,6 +222,7 @@ class VideoDetectionPipeline:
             frames_processed=frames_processed,
             detections_emitted=detections_emitted,
             track_observations_emitted=track_observations_emitted,
+            events_emitted=events_emitted,
             observations_path=observations_path,
             annotated_video_path=annotated_video_path,
         )
