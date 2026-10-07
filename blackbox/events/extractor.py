@@ -79,10 +79,11 @@ class EventExtractor:
                         subject_track_id=track_id,
                         class_name=state.class_name,
                         confidence=1.0,
-                        provenance=EventProvenance.OBSERVED,
+                        provenance=EventProvenance.INFERRED,
                         metadata={
                             "meaning": (
-                                "track not observed in current frame"
+                                "track not observed in current frame; "
+                                "this does not establish physical departure"
                             ),
                         },
                     )
