@@ -68,3 +68,92 @@ class YoloDetector:
             )
 
         return detections
+
+
+
+class OpenVocabularyDetector:
+    """Text-conditioned detector for concepts outside a fixed class list.
+
+    By default this uses a Hugging Face zero-shot object detection pipeline.
+    The pipeline is injected in tests so CI does not download a model.
+    """
+
+    def __init__(
+        self,
+        prompts: tuple[str, ...],
+        confidence_threshold: float = 0.25,
+        model_name: str = "google/owlv2-base-patch16-ensemble",
+        pipeline_model: Any | None = None,
+    ) -> None:
+        if not prompts:
+            raise ValueError("prompts must not be empty")
+        if any(not prompt.strip() for prompt in prompts):
+            raise ValueError("prompts must not contain empty values")
+        if not 0.0 <= confidence_threshold <= 1.0:
+            raise ValueError(
+                "confidence_threshold must be between 0 and 1"
+            )
+
+        self.prompts = tuple(prompt.strip() for prompt in prompts)
+        self.confidence_threshold = confidence_threshold
+
+        if pipeline_model is None:
+            from transformers import pipeline
+
+            pipeline_model = pipeline(
+                task="zero-shot-object-detection",
+                model=model_name,
+            )
+
+        self.pipeline_model = pipeline_model
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        from PIL import Image
+
+        rgb = frame[:, :, ::-1]
+        image = Image.fromarray(rgb)
+        results = self.pipeline_model(
+            image,
+            candidate_labels=list(self.prompts),
+        )
+
+        detections: list[Detection] = []
+        for result in results:
+            confidence = float(result["score"])
+            if confidence < self.confidence_threshold:
+                continue
+
+            box = result["box"]
+            detections.append(
+                Detection(
+                    class_name=str(result["label"]),
+                    confidence=confidence,
+                    bbox=BoundingBox(
+                        x1=float(box["xmin"]),
+                        y1=float(box["ymin"]),
+                        x2=float(box["xmax"]),
+                        y2=float(box["ymax"]),
+                    ),
+                )
+            )
+
+        return detections
+
+
+class HybridDetector:
+    """Runs multiple detectors and concatenates their evidence.
+
+    This keeps fixed-class and prompted detection separate instead of
+    pretending they share the same confidence calibration.
+    """
+
+    def __init__(self, detectors: tuple[Detector, ...]) -> None:
+        if not detectors:
+            raise ValueError("detectors must not be empty")
+        self.detectors = detectors
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        detections: list[Detection] = []
+        for detector in self.detectors:
+            detections.extend(detector.detect(frame))
+        return detections
