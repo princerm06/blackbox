@@ -87,6 +87,31 @@ export function listTargets(sessionId: string) {
   );
 }
 
+export function setTargetEnabled(
+  sessionId: string,
+  targetId: string,
+  enabled: boolean,
+) {
+  return request<TrackingTarget>(
+    `/sessions/${sessionId}/targets/${targetId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+}
+
+export function removeTarget(
+  sessionId: string,
+  targetId: string,
+) {
+  return request<void>(
+    `/sessions/${sessionId}/targets/${targetId}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function uploadVideo(
   sessionId: string,
   file: File,
