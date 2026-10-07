@@ -81,6 +81,7 @@ def world_event_to_dict(event: WorldEvent) -> dict[str, object]:
         "confidence": event.confidence,
         "provenance": event.provenance.value,
         "metadata": event.metadata,
+        "related_track_ids": list(event.related_track_ids),
     }
 
 
