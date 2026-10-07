@@ -1,3 +1,4 @@
+import pytest
 import csv
 import json
 
@@ -30,7 +31,7 @@ def test_calibration_bins_summarize_prediction_frequency() -> None:
 
     assert len(rows) == 2
     assert rows[0]["count"] == 2
-    assert rows[0]["mean_predicted_probability"] == 0.15
+    assert rows[0]["mean_predicted_probability"] == pytest.approx(0.15)
     assert rows[0]["empirical_change_frequency"] == 0.5
     assert rows[1]["count"] == 1
 
