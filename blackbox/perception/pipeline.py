@@ -86,7 +86,7 @@ def belief_to_dict(
     belief: ObjectStateHypothesis,
 ) -> dict[str, object]:
     return {
-        "subject_track_id": belief.subject_track_id,
+        "subject_object_id": belief.subject_object_id,
         "predicate": belief.predicate,
         "value": belief.value,
         "confidence": belief.confidence,
@@ -95,6 +95,9 @@ def belief_to_dict(
         "updated_timestamp_ms": belief.updated_timestamp_ms,
         "supporting_event_types": list(
             belief.supporting_event_types
+        ),
+        "evidence_track_ids": list(
+            belief.evidence_track_ids
         ),
     }
 
@@ -237,16 +240,16 @@ class VideoDetectionPipeline:
                     self.world_state.update(
                         frame_index=video_frame.frame_index,
                         timestamp_ms=video_frame.timestamp_ms,
-                        observations=track_observations,
+                        identity_assignments=identity_assignments,
                         events=events,
                     )
 
                     beliefs = {
-                        track_id: [
+                        object_id: [
                             belief_to_dict(belief)
-                            for belief in track_beliefs
+                            for belief in object_beliefs
                         ]
-                        for track_id, track_beliefs
+                        for object_id, object_beliefs
                         in self.world_state.all_beliefs().items()
                     }
 
