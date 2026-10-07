@@ -459,3 +459,57 @@ footer {
   color: var(--danger);
   border-color: rgba(242, 166, 166, 0.35);
 }
+
+
+.mediaSwitch {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #0d1115;
+}
+
+.mediaTab {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mediaTab:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.activeMediaTab {
+  border-color: var(--line);
+  background: #171d23;
+  color: var(--text);
+}
+
+.ambiguityNotice {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(228, 198, 125, 0.22);
+  border-radius: 9px;
+  background: rgba(228, 198, 125, 0.05);
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.hypothesisRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 8px;
+  color: #bdc5cc;
+  font-size: 12px;
+}
+
+.hypothesisRow strong {
+  color: var(--text);
+  font-size: 12px;
+}
