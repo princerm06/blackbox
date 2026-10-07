@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=2.0",
     "ultralytics>=8.3",
     "fastapi>=0.116",
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]
