@@ -493,6 +493,34 @@ class WorldStateProjector:
             updated_timestamp_ms=self._current_timestamp_ms,
         )
 
+    def object_class(self, object_id: str) -> str | None:
+        history = self._histories.get(object_id)
+        if history is None or history.last_observation is None:
+            return None
+        return history.last_observation.class_name
+
+    def all_object_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._histories))
+
+    def all_events(self) -> tuple[tuple[str, WorldEvent], ...]:
+        events: list[tuple[str, WorldEvent]] = []
+        for object_id, history in self._histories.items():
+            events.extend(
+                (object_id, event)
+                for event in history.events
+            )
+        return tuple(
+            sorted(
+                events,
+                key=lambda item: (
+                    item[1].frame_index,
+                    item[1].timestamp_ms,
+                    item[0],
+                    item[1].event_type.value,
+                ),
+            )
+        )
+
     def object_ids_for_class(
         self,
         class_name: str,
