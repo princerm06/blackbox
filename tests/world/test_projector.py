@@ -199,3 +199,72 @@ def test_new_track_can_extend_same_object_history() -> None:
             "track-1",
             "track-2",
         )
+
+
+def test_disappearance_creates_competing_uncertainty_hypotheses() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[assignment()],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+            )
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[],
+        events=[
+            event(
+                EventType.OBJECT_DISAPPEARED,
+                1,
+                33,
+                provenance=EventProvenance.INFERRED,
+            )
+        ],
+    )
+
+    distributions = projector.uncertainty_for("object-1")
+
+    assert len(distributions) == 1
+
+    distribution = distributions[0]
+
+    assert distribution.predicate == "UNOBSERVED_CHANGE_STATE"
+    assert {
+        hypothesis.value
+        for hypothesis in distribution.hypotheses
+    } == {
+        "unchanged_since_last_observation",
+        "changed_while_unobserved",
+    }
+    assert sum(
+        hypothesis.weight
+        for hypothesis in distribution.hypotheses
+    ) == 1.0
+
+
+def test_observed_object_has_no_unobserved_change_distribution() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[assignment()],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+            )
+        ],
+    )
+
+    assert projector.uncertainty_for("object-1") == ()
