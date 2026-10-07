@@ -14,6 +14,7 @@ from blackbox.schemas.beliefs import ObjectStateHypothesis
 from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.perception import Detection, TrackObservation
+from blackbox.schemas.uncertainty import HypothesisDistribution
 from blackbox.world.projector import WorldStateProjector
 
 
@@ -99,6 +100,26 @@ def belief_to_dict(
         "evidence_track_ids": list(
             belief.evidence_track_ids
         ),
+    }
+
+
+def uncertainty_to_dict(
+    distribution: HypothesisDistribution,
+) -> dict[str, object]:
+    return {
+        "subject_object_id": distribution.subject_object_id,
+        "predicate": distribution.predicate,
+        "updated_frame_index": distribution.updated_frame_index,
+        "updated_timestamp_ms": distribution.updated_timestamp_ms,
+        "hypotheses": [
+            {
+                "value": hypothesis.value,
+                "weight": hypothesis.weight,
+                "provenance": hypothesis.provenance,
+                "rationale": hypothesis.rationale,
+            }
+            for hypothesis in distribution.hypotheses
+        ],
     }
 
 
@@ -253,6 +274,15 @@ class VideoDetectionPipeline:
                         in self.world_state.all_beliefs().items()
                     }
 
+                    uncertainty = {
+                        object_id: [
+                            uncertainty_to_dict(distribution)
+                            for distribution in distributions
+                        ]
+                        for object_id, distributions
+                        in self.world_state.all_uncertainty().items()
+                    }
+
                     record = {
                         "frame_index": video_frame.frame_index,
                         "timestamp_ms": video_frame.timestamp_ms,
@@ -273,6 +303,7 @@ class VideoDetectionPipeline:
                             for event in events
                         ],
                         "beliefs": beliefs,
+                        "uncertainty": uncertainty,
                     }
 
                     output_file.write(
