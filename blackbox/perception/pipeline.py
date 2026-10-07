@@ -10,12 +10,14 @@ from blackbox.perception.detector import Detector
 from blackbox.perception.identity import ObjectIdentityResolver
 from blackbox.perception.tracker import IoUTracker, Tracker
 from blackbox.perception.video import VideoReader
+from blackbox.reasoning.reobserve import ReobservationPlanner
 from blackbox.schemas.beliefs import ObjectStateHypothesis
 from blackbox.schemas.events import WorldEvent
 from blackbox.schemas.identity import IdentityAssignment
 from blackbox.schemas.opportunities import OpportunitySignal
 from blackbox.schemas.perception import Detection, TrackObservation
 from blackbox.schemas.relations import ObjectRelation
+from blackbox.schemas.reobservation import ReobservationPlan
 from blackbox.schemas.uncertainty import HypothesisDistribution
 from blackbox.world.projector import WorldStateProjector
 
@@ -134,6 +136,25 @@ def relation_to_dict(
         "frame_index": relation.frame_index,
         "timestamp_ms": relation.timestamp_ms,
         "evidence_track_ids": list(relation.evidence_track_ids),
+    }
+
+
+def reobservation_to_dict(
+    plan: ReobservationPlan,
+) -> dict[str, object]:
+    return {
+        "subject_object_id": plan.subject_object_id,
+        "should_reobserve": plan.should_reobserve,
+        "uncertainty": plan.uncertainty,
+        "rationale": plan.rationale,
+        "targets": [
+            {
+                "target": target.target,
+                "score": target.score,
+                "rationale": target.rationale,
+            }
+            for target in plan.targets
+        ],
     }
 
 
@@ -339,6 +360,15 @@ class VideoDetectionPipeline:
                         in self.world_state.all_uncertainty().items()
                     }
 
+                    reobservation = {
+                        object_id: reobservation_to_dict(
+                            ReobservationPlanner(
+                                self.world_state
+                            ).plan_for(object_id)
+                        )
+                        for object_id in self.world_state.all_beliefs()
+                    }
+
                     record = {
                         "frame_index": video_frame.frame_index,
                         "timestamp_ms": video_frame.timestamp_ms,
@@ -362,6 +392,7 @@ class VideoDetectionPipeline:
                         "relations": relations,
                         "opportunities": opportunities,
                         "uncertainty": uncertainty,
+                        "reobservation": reobservation,
                     }
 
                     output_file.write(
