@@ -8,6 +8,7 @@ class UnseenEpisodeCase:
     case_id: str
     opportunity_strengths: tuple[float, ...]
     changed_while_unobserved: bool
+    ground_truth_change_probability: float | None = None
 
     def __post_init__(self) -> None:
         if not self.case_id:
@@ -18,6 +19,15 @@ class UnseenEpisodeCase:
         ):
             raise ValueError(
                 "opportunity strengths must be non-negative"
+            )
+        if (
+            self.ground_truth_change_probability is not None
+            and not 0.0
+            <= self.ground_truth_change_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "ground_truth_change_probability must be between 0 and 1"
             )
 
 
@@ -32,3 +42,12 @@ class BinaryPrediction:
             raise ValueError(
                 "probability_changed must be between 0 and 1"
             )
+
+
+@dataclass(frozen=True)
+class ModelEvaluation:
+    model_name: str
+    case_count: int
+    brier: float
+    nll: float
+    ece: float
