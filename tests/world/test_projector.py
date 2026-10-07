@@ -1142,3 +1142,78 @@ def test_new_unseen_episode_does_not_inherit_old_opportunities() -> None:
     )
 
     assert changed_weight == 0.5
+
+
+class FixedChangeModel:
+    def distribution(
+        self,
+        object_id,
+        signals,
+        frame_index,
+        timestamp_ms,
+    ):
+        from blackbox.schemas.uncertainty import (
+            CompetingHypothesis,
+            HypothesisDistribution,
+        )
+
+        return HypothesisDistribution(
+            subject_object_id=object_id,
+            predicate="UNOBSERVED_CHANGE_STATE",
+            hypotheses=(
+                CompetingHypothesis(
+                    value="unchanged_since_last_observation",
+                    weight=0.75,
+                    provenance="test_model",
+                    rationale="fixed test distribution",
+                ),
+                CompetingHypothesis(
+                    value="changed_while_unobserved",
+                    weight=0.25,
+                    provenance="test_model",
+                    rationale="fixed test distribution",
+                ),
+            ),
+            updated_frame_index=frame_index,
+            updated_timestamp_ms=timestamp_ms,
+        )
+
+
+def test_projector_accepts_swappable_change_model() -> None:
+    projector = WorldStateProjector(
+        change_model=FixedChangeModel()
+    )
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[assignment()],
+        events=[event(EventType.OBJECT_APPEARED, 0, 0)],
+    )
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[],
+        events=[
+            event(
+                EventType.OBJECT_DISAPPEARED,
+                1,
+                33,
+                provenance=EventProvenance.INFERRED,
+            )
+        ],
+    )
+
+    state_distribution = next(
+        distribution
+        for distribution in projector.uncertainty_for("object-1")
+        if distribution.predicate == "UNOBSERVED_CHANGE_STATE"
+    )
+    changed = next(
+        hypothesis
+        for hypothesis in state_distribution.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    assert changed.weight == 0.25
+    assert changed.provenance == "test_model"
