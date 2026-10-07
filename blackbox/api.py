@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from blackbox.app_processing import (
@@ -109,6 +110,37 @@ def _event_to_dict(object_id, event) -> dict[str, object]:
         "provenance": event.provenance.value,
         "metadata": event.metadata,
         "related_track_ids": list(event.related_track_ids),
+    }
+
+
+
+def _run_snapshot(
+    session_id: str,
+    run_id: str,
+    run,
+) -> dict[str, object]:
+    return {
+        "session_id": session_id,
+        "run_id": run_id,
+        "summary": processing_summary_to_dict(run.summary),
+        "objects": [
+            _object_summary(run.world_state, object_id)
+            for object_id in run.world_state.all_object_ids()
+        ],
+        "events": [
+            _event_to_dict(object_id, event)
+            for object_id, event in run.world_state.all_events()
+        ],
+        "media": {
+            "source": (
+                f"/sessions/{session_id}/runs/{run_id}/media/source"
+            ),
+            "annotated": (
+                f"/sessions/{session_id}/runs/{run_id}/media/annotated"
+                if run.summary.annotated_video_path is not None
+                else None
+            ),
+        },
     }
 
 
@@ -239,6 +271,66 @@ def create_app(
             ],
             "summary": processing_summary_to_dict(processed.summary),
         }
+
+    @app.get("/sessions/{session_id}/runs/{run_id}")
+    def get_run(
+        session_id: str,
+        run_id: str,
+    ) -> dict[str, object]:
+        try:
+            sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="run not found") from error
+
+        return _run_snapshot(session_id, run_id, run)
+
+    @app.get("/sessions/{session_id}/runs/{run_id}/media/source")
+    def get_source_video(
+        session_id: str,
+        run_id: str,
+    ) -> FileResponse:
+        try:
+            sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="run not found") from error
+
+        if not run.source_video_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="source video is no longer available",
+            )
+
+        return FileResponse(
+            run.source_video_path,
+            media_type="video/mp4",
+            filename=run.source_video_path.name,
+        )
+
+    @app.get("/sessions/{session_id}/runs/{run_id}/media/annotated")
+    def get_annotated_video(
+        session_id: str,
+        run_id: str,
+    ) -> FileResponse:
+        try:
+            sessions.get(session_id)
+            run = runs.get(session_id, run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="run not found") from error
+
+        path = run.summary.annotated_video_path
+        if path is None or not path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="annotated video is not available",
+            )
+
+        return FileResponse(
+            path,
+            media_type="video/mp4",
+            filename=path.name,
+        )
 
     @app.get("/sessions/{session_id}/runs/{run_id}/objects")
     def list_run_objects(
