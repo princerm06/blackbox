@@ -483,3 +483,235 @@ def test_person_object_interaction_is_strong_change_opportunity() -> None:
 
     assert after_changed > before_changed
     assert after_changed - before_changed >= 0.18
+
+
+def positioned_assignment(
+    track_id: str,
+    object_id: str,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+) -> IdentityAssignment:
+    obs = TrackObservation(
+        track_id=track_id,
+        class_name="object",
+        confidence=0.9,
+        bbox=BoundingBox(
+            x1=x1,
+            y1=y1,
+            x2=x2,
+            y2=y2,
+        ),
+    )
+
+    return IdentityAssignment(
+        object_id=object_id,
+        track_id=track_id,
+        class_name="object",
+        confidence=1.0,
+        provenance=IdentityProvenance.OBSERVED_TRACK,
+        observation=obs,
+    )
+
+
+def test_related_source_event_gets_stronger_opportunity_weight() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            positioned_assignment(
+                "keys-track",
+                "keys-object",
+                0,
+                0,
+                40,
+                40,
+            ),
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+            positioned_assignment(
+                "mug-track",
+                "mug-object",
+                500,
+                0,
+                560,
+                60,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="bag-track",
+                class_name="backpack",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.OBJECT_APPEARED,
+                frame_index=0,
+                timestamp_ms=0,
+                subject_track_id="mug-track",
+                class_name="mug",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+            positioned_assignment(
+                "mug-track",
+                "mug-object",
+                500,
+                0,
+                560,
+                60,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_DISAPPEARED,
+                frame_index=1,
+                timestamp_ms=33,
+                subject_track_id="keys-track",
+                class_name="keys",
+                confidence=1.0,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            )
+        ],
+    )
+
+    projector.update(
+        frame_index=2,
+        timestamp_ms=66,
+        identity_assignments=[
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+            positioned_assignment(
+                "mug-track",
+                "mug-object",
+                500,
+                0,
+                560,
+                60,
+            ),
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.PERSON_OBJECT_INTERACTION,
+                frame_index=2,
+                timestamp_ms=66,
+                subject_track_id="bag-track",
+                class_name="backpack",
+                confidence=0.8,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.PERSON_OBJECT_INTERACTION,
+                frame_index=2,
+                timestamp_ms=66,
+                subject_track_id="mug-track",
+                class_name="mug",
+                confidence=0.8,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            ),
+        ],
+    )
+
+    interaction_signals = [
+        signal
+        for signal in projector.opportunities_for("keys-object")
+        if signal.signal_type.value == "PERSON_OBJECT_INTERACTION"
+    ]
+
+    bag_signal = next(
+        signal
+        for signal in interaction_signals
+        if signal.source_object_id == "bag-object"
+    )
+    mug_signal = next(
+        signal
+        for signal in interaction_signals
+        if signal.source_object_id == "mug-object"
+    )
+
+    assert bag_signal.relation_type == "SPATIALLY_ASSOCIATED"
+    assert bag_signal.relation_confidence is not None
+    assert bag_signal.strength > mug_signal.strength
+    assert mug_signal.relation_type is None
+
+
+def test_spatial_relation_is_not_claimed_as_containment() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            positioned_assignment(
+                "keys-track",
+                "keys-object",
+                0,
+                0,
+                40,
+                40,
+            ),
+            positioned_assignment(
+                "bag-track",
+                "bag-object",
+                20,
+                0,
+                120,
+                100,
+            ),
+        ],
+        events=[],
+    )
+
+    relations = projector.relations_for("keys-object")
+
+    assert len(relations) == 1
+    assert relations[0].relation_type.value == "SPATIALLY_ASSOCIATED"
