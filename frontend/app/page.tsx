@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   API_BASE,
@@ -8,6 +8,7 @@ import {
   TrackingTarget,
   createSession,
   getRun,
+  listTargets,
   mediaUrl,
   registerTarget,
   removeTarget,
@@ -28,7 +29,29 @@ export default function HomePage() {
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [queryTargetId, setQueryTargetId] = useState("");
   const [status, setStatus] = useState("Ready");
+  const [mediaMode, setMediaMode] = useState<"annotated" | "source">("annotated");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("blackbox.session_id");
+    if (!saved) return;
+
+    setStatus("Restoring session…");
+    listTargets(saved)
+      .then((payload) => {
+        setSessionId(saved);
+        setTargets(payload.targets);
+        const firstEnabled = payload.targets.find((target) => target.enabled);
+        if (firstEnabled) {
+          setQueryTargetId(firstEnabled.target_id);
+        }
+        setStatus("Session restored");
+      })
+      .catch(() => {
+        window.localStorage.removeItem("blackbox.session_id");
+        setStatus("Ready");
+      });
+  }, []);
 
   const selectedTarget = useMemo(
     () => targets.find((target) => target.target_id === queryTargetId),
@@ -40,6 +63,7 @@ export default function HomePage() {
     setStatus("Starting session…");
     const created = await createSession();
     setSessionId(created.session_id);
+    window.localStorage.setItem("blackbox.session_id", created.session_id);
     setStatus("Session ready");
     return created.session_id;
   }
@@ -172,8 +196,33 @@ export default function HomePage() {
               )}
             </div>
 
-            {run?.media.annotated ? (
-              <video className="video" controls src={mediaUrl(run.media.annotated)} />
+            {run ? (
+              <>
+                <div className="mediaSwitch">
+                  <button
+                    className={mediaMode === "annotated" ? "mediaTab activeMediaTab" : "mediaTab"}
+                    onClick={() => setMediaMode("annotated")}
+                    disabled={!run.media.annotated}
+                  >
+                    BlackBox view
+                  </button>
+                  <button
+                    className={mediaMode === "source" ? "mediaTab activeMediaTab" : "mediaTab"}
+                    onClick={() => setMediaMode("source")}
+                  >
+                    Source
+                  </button>
+                </div>
+                <video
+                  className="video"
+                  controls
+                  src={mediaUrl(
+                    mediaMode === "annotated" && run.media.annotated
+                      ? run.media.annotated
+                      : run.media.source,
+                  )}
+                />
+              </>
             ) : (
               <label className="dropzone">
                 <input
@@ -242,6 +291,24 @@ export default function HomePage() {
                 </div>
                 <p className="answerText">{queryResult.answer.answer}</p>
 
+                {queryResult.ambiguity && (
+                  <div className="ambiguityNotice">
+                    {queryResult.ambiguity}
+                  </div>
+                )}
+
+                {queryResult.answer.alternatives.length > 0 && (
+                  <div className="detailBlock">
+                    <span className="detailLabel">Alternatives</span>
+                    {queryResult.answer.alternatives.map((item) => (
+                      <div className="hypothesisRow" key={item.hypothesis}>
+                        <span>{item.hypothesis.replaceAll("_", " ")}</span>
+                        <strong>{Math.round(item.weight * 100)}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {queryResult.answer.evidence.length > 0 && (
                   <div className="detailBlock">
                     <span className="detailLabel">Evidence</span>
@@ -251,10 +318,25 @@ export default function HomePage() {
                   </div>
                 )}
 
+                {queryResult.answer.caveats.length > 0 && (
+                  <div className="detailBlock">
+                    <span className="detailLabel">Caveats</span>
+                    {queryResult.answer.caveats.map((item) => (
+                      <p key={item}>{item}</p>
+                    ))}
+                  </div>
+                )}
+
                 {queryResult.reobservation.should_reobserve && (
                   <div className="reobserve">
                     <span className="detailLabel">Next check</span>
                     <p>{queryResult.reobservation.rationale}</p>
+                    {queryResult.reobservation.targets.map((target) => (
+                      <div className="hypothesisRow" key={target.target}>
+                        <span>{target.target.replaceAll(":", " → ")}</span>
+                        <strong>{Math.round(target.score * 100)}%</strong>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
