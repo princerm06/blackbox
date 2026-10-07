@@ -114,13 +114,20 @@ def test_pipeline_emits_tracked_observations(
     assert first_record["events"][0]["event_type"] == "OBJECT_APPEARED"
     assert first_record["events"][0]["provenance"] == "observed"
 
-    beliefs = first_record["beliefs"]["track-1"]
+    beliefs = first_record["beliefs"]["object-1"]
     predicates = {
         belief["predicate"]: belief
         for belief in beliefs
     }
 
     assert predicates["LAST_OBSERVED_BBOX"]["provenance"] == "observed"
+    assert (
+        predicates["LAST_OBSERVED_BBOX"]["subject_object_id"]
+        == "object-1"
+    )
+    assert predicates["LAST_OBSERVED_BBOX"]["evidence_track_ids"] == [
+        "track-1"
+    ]
     assert predicates["CURRENT_VISIBILITY"]["value"] == "observed"
 
     assert {
