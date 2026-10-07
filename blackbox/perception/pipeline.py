@@ -6,14 +6,16 @@ import cv2
 import numpy as np
 
 from blackbox.perception.detector import Detector
+from blackbox.perception.tracker import IoUTracker, Tracker
 from blackbox.perception.video import VideoReader
-from blackbox.schemas.perception import Detection
+from blackbox.schemas.perception import Detection, TrackObservation
 
 
 @dataclass(frozen=True)
 class ProcessingSummary:
     frames_processed: int
     detections_emitted: int
+    track_observations_emitted: int
     observations_path: Path
     annotated_video_path: Path | None
 
@@ -31,14 +33,30 @@ def detection_to_dict(detection: Detection) -> dict[str, object]:
     }
 
 
+def track_observation_to_dict(
+    observation: TrackObservation,
+) -> dict[str, object]:
+    return {
+        "track_id": observation.track_id,
+        "class_name": observation.class_name,
+        "confidence": observation.confidence,
+        "bbox": {
+            "x1": observation.bbox.x1,
+            "y1": observation.bbox.y1,
+            "x2": observation.bbox.x2,
+            "y2": observation.bbox.y2,
+        },
+    }
+
+
 def annotate_frame(
     frame: np.ndarray,
-    detections: list[Detection],
+    observations: list[TrackObservation],
 ) -> np.ndarray:
     annotated = frame.copy()
 
-    for detection in detections:
-        bbox = detection.bbox
+    for observation in observations:
+        bbox = observation.bbox
         x1, y1, x2, y2 = (
             int(bbox.x1),
             int(bbox.y1),
@@ -46,9 +64,20 @@ def annotate_frame(
             int(bbox.y2),
         )
 
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), (255, 255, 255), 2)
+        cv2.rectangle(
+            annotated,
+            (x1, y1),
+            (x2, y2),
+            (255, 255, 255),
+            2,
+        )
 
-        label = f"{detection.class_name} {detection.confidence:.2f}"
+        label = (
+            f"{observation.track_id} "
+            f"{observation.class_name} "
+            f"{observation.confidence:.2f}"
+        )
+
         cv2.putText(
             annotated,
             label,
@@ -64,8 +93,13 @@ def annotate_frame(
 
 
 class VideoDetectionPipeline:
-    def __init__(self, detector: Detector):
+    def __init__(
+        self,
+        detector: Detector,
+        tracker: Tracker | None = None,
+    ):
         self.detector = detector
+        self.tracker = tracker or IoUTracker()
 
     def process(
         self,
@@ -75,7 +109,7 @@ class VideoDetectionPipeline:
     ) -> ProcessingSummary:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        observations_path = output_dir / "detections.jsonl"
+        observations_path = output_dir / "observations.jsonl"
         annotated_video_path = (
             output_dir / "annotated.mp4"
             if write_annotated_video
@@ -102,11 +136,21 @@ class VideoDetectionPipeline:
 
         frames_processed = 0
         detections_emitted = 0
+        track_observations_emitted = 0
 
         try:
-            with observations_path.open("w", encoding="utf-8") as output_file:
+            with observations_path.open(
+                "w",
+                encoding="utf-8",
+            ) as output_file:
                 for video_frame in reader.frames():
-                    detections = self.detector.detect(video_frame.image)
+                    detections = self.detector.detect(
+                        video_frame.image
+                    )
+
+                    track_observations = self.tracker.update(
+                        detections
+                    )
 
                     record = {
                         "frame_index": video_frame.frame_index,
@@ -115,20 +159,29 @@ class VideoDetectionPipeline:
                             detection_to_dict(detection)
                             for detection in detections
                         ],
+                        "tracks": [
+                            track_observation_to_dict(observation)
+                            for observation in track_observations
+                        ],
                     }
 
-                    output_file.write(json.dumps(record) + "\n")
+                    output_file.write(
+                        json.dumps(record) + "\n"
+                    )
 
                     if writer is not None:
                         writer.write(
                             annotate_frame(
                                 video_frame.image,
-                                detections,
+                                track_observations,
                             )
                         )
 
                     frames_processed += 1
                     detections_emitted += len(detections)
+                    track_observations_emitted += len(
+                        track_observations
+                    )
         finally:
             reader.close()
 
@@ -138,6 +191,7 @@ class VideoDetectionPipeline:
         return ProcessingSummary(
             frames_processed=frames_processed,
             detections_emitted=detections_emitted,
+            track_observations_emitted=track_observations_emitted,
             observations_path=observations_path,
             annotated_video_path=annotated_video_path,
         )
