@@ -171,3 +171,61 @@ def test_empty_video_is_rejected(tmp_path) -> None:
     )
 
     assert response.status_code == 400
+
+
+
+def test_run_snapshot_exposes_frontend_contract(tmp_path) -> None:
+    client = make_client(FakeProcessor(), tmp_path)
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video-bytes", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == session_id
+    assert payload["run_id"] == run_id
+    assert payload["summary"]["frames_processed"] == 12
+    assert payload["objects"] == []
+    assert payload["events"] == []
+    assert payload["media"]["source"].endswith("/media/source")
+    assert payload["media"]["annotated"].endswith("/media/annotated")
+
+
+def test_run_media_endpoints_serve_source_and_annotated_video(tmp_path) -> None:
+    client = make_client(FakeProcessor(), tmp_path)
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video-bytes", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    source = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/media/source"
+    )
+    annotated = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/media/annotated"
+    )
+
+    assert source.status_code == 200
+    assert source.content == b"video-bytes"
+    assert source.headers["content-type"].startswith("video/mp4")
+
+    assert annotated.status_code == 200
+    assert annotated.content == b"fake"
+    assert annotated.headers["content-type"].startswith("video/mp4")
