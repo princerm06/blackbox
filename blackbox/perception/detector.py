@@ -3,6 +3,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from blackbox.schemas.perception import BoundingBox, Detection
+from blackbox.perception.targets import TargetRegistry
 
 
 class Detector(Protocol):
@@ -156,4 +157,70 @@ class HybridDetector:
         detections: list[Detection] = []
         for detector in self.detectors:
             detections.extend(detector.detect(frame))
+        return detections
+
+
+
+class TargetAwareOpenVocabularyDetector:
+    """Open-vocabulary detector backed by a mutable target registry."""
+
+    def __init__(
+        self,
+        registry: TargetRegistry,
+        confidence_threshold: float = 0.25,
+        model_name: str = "google/owlv2-base-patch16-ensemble",
+        pipeline_model: Any | None = None,
+    ) -> None:
+        if not 0.0 <= confidence_threshold <= 1.0:
+            raise ValueError(
+                "confidence_threshold must be between 0 and 1"
+            )
+
+        self.registry = registry
+        self.confidence_threshold = confidence_threshold
+
+        if pipeline_model is None:
+            from transformers import pipeline
+
+            pipeline_model = pipeline(
+                task="zero-shot-object-detection",
+                model=model_name,
+            )
+
+        self.pipeline_model = pipeline_model
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        prompts = self.registry.prompts()
+        if not prompts:
+            return []
+
+        from PIL import Image
+
+        rgb = frame[:, :, ::-1]
+        image = Image.fromarray(rgb)
+        results = self.pipeline_model(
+            image,
+            candidate_labels=list(prompts),
+        )
+
+        detections: list[Detection] = []
+        for result in results:
+            confidence = float(result["score"])
+            if confidence < self.confidence_threshold:
+                continue
+
+            box = result["box"]
+            detections.append(
+                Detection(
+                    class_name=str(result["label"]),
+                    confidence=confidence,
+                    bbox=BoundingBox(
+                        x1=float(box["xmin"]),
+                        y1=float(box["ymin"]),
+                        x2=float(box["xmax"]),
+                        y2=float(box["ymax"]),
+                    ),
+                )
+            )
+
         return detections
