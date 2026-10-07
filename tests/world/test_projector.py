@@ -393,3 +393,93 @@ def test_other_object_motion_is_change_opportunity() -> None:
     )
 
     assert changed_weight > 0.5
+
+
+def test_person_object_interaction_is_strong_change_opportunity() -> None:
+    projector = WorldStateProjector()
+
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            assignment("track-1", "object-1"),
+            assignment("track-2", "object-2"),
+        ],
+        events=[
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+                track_id="track-1",
+            ),
+            event(
+                EventType.OBJECT_APPEARED,
+                0,
+                0,
+                track_id="track-2",
+            ),
+        ],
+    )
+
+    projector.update(
+        frame_index=1,
+        timestamp_ms=33,
+        identity_assignments=[
+            assignment("track-2", "object-2"),
+        ],
+        events=[
+            event(
+                EventType.OBJECT_DISAPPEARED,
+                1,
+                33,
+                track_id="track-1",
+                provenance=EventProvenance.INFERRED,
+            )
+        ],
+    )
+
+    before = projector.uncertainty_for("object-1")[0]
+    before_changed = next(
+        hypothesis.weight
+        for hypothesis in before.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    interaction = WorldEvent(
+        event_type=EventType.PERSON_OBJECT_INTERACTION,
+        frame_index=2,
+        timestamp_ms=66,
+        subject_track_id="track-2",
+        class_name="backpack",
+        confidence=0.8,
+        provenance=EventProvenance.INFERRED,
+        metadata={"person_track_id": "person-1"},
+        related_track_ids=("person-1",),
+    )
+
+    projector.update(
+        frame_index=2,
+        timestamp_ms=66,
+        identity_assignments=[
+            assignment("track-2", "object-2"),
+        ],
+        events=[interaction],
+    )
+
+    signals = projector.opportunities_for("object-1")
+
+    assert any(
+        signal.signal_type.value == "PERSON_OBJECT_INTERACTION"
+        and signal.source_object_id == "object-2"
+        for signal in signals
+    )
+
+    after = projector.uncertainty_for("object-1")[0]
+    after_changed = next(
+        hypothesis.weight
+        for hypothesis in after.hypotheses
+        if hypothesis.value == "changed_while_unobserved"
+    )
+
+    assert after_changed > before_changed
+    assert after_changed - before_changed >= 0.18
