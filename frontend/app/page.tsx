@@ -408,7 +408,7 @@ export default function HomePage() {
                     {queryResult.answer.alternatives.map((item) => (
                       <div className="hypothesisItem" key={item.hypothesis}>
                         <div className="hypothesisRow">
-                          <span>{item.hypothesis.replaceAll("_", " ")}</span>
+                          <span>{item.label}</span>
                           <strong>{Math.round(item.weight * 100)}%</strong>
                         </div>
                         <div className="confidenceTrack">
