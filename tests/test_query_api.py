@@ -101,6 +101,7 @@ def test_where_query_returns_grounded_answer(tmp_path: Path) -> None:
     assert payload["target"]["display_name"] == "My Keys"
     assert payload["object_id"] == "object-1"
     assert payload["answer"]["provenance"] == "observed"
+    assert "My Keys" in payload["answer"]["answer"]
     assert payload["answer"]["confidence"] == 1.0
     assert payload["reobservation"]["should_reobserve"] is False
     assert payload["ambiguity"] is None
