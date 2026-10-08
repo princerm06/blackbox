@@ -25,7 +25,18 @@ class SetTargetEnabledRequest(BaseModel):
     enabled: bool
 
 
-def _answer_to_dict(answer) -> dict[str, object]:
+def _format_hypothesis_label(value: str, object_label) -> str:
+    if value == "last_seen_area":
+        return "last-seen area"
+    if value == "outside_observed_scene":
+        return "outside observed scene"
+    if value.startswith("associated_with:"):
+        object_id = value.split(":", 1)[1]
+        return f"associated with {object_label(object_id)}"
+    return value.replace("_", " ")
+
+
+def _answer_to_dict(answer, object_label=lambda object_id: object_id) -> dict[str, object]:
     return {
         "subject_object_id": answer.subject_object_id,
         "answer": answer.answer,
@@ -33,7 +44,11 @@ def _answer_to_dict(answer) -> dict[str, object]:
         "provenance": answer.provenance,
         "primary_hypothesis": answer.primary_hypothesis,
         "alternatives": [
-            {"hypothesis": value, "weight": weight}
+            {
+                "hypothesis": value,
+                "label": _format_hypothesis_label(value, object_label),
+                "weight": weight,
+            }
             for value, weight in answer.alternatives
         ],
         "evidence": list(answer.evidence),
@@ -57,6 +72,28 @@ def _reobservation_to_dict(plan) -> dict[str, object]:
         ],
     }
 
+
+
+
+def _object_labeler(session, world_state):
+    targets = session.targets.targets()
+
+    def label(object_id: str) -> str:
+        class_name = world_state.object_class(object_id)
+        if class_name is None:
+            return object_id
+
+        matches = [
+            target
+            for target in targets
+            if target.prompt == class_name
+        ]
+        if len(matches) == 1:
+            return matches[0].display_name
+
+        return class_name
+
+    return label
 
 
 def _belief_value(beliefs, predicate: str):
@@ -409,7 +446,11 @@ def create_app(
             )
 
         object_id = object_ids[0]
-        answer = BeliefQueryEngine(run.world_state).where_is(object_id)
+        object_label = _object_labeler(session, run.world_state)
+        answer = BeliefQueryEngine(
+            run.world_state,
+            object_label=object_label,
+        ).where_is(object_id)
         reobservation = ReobservationPlanner(
             run.world_state
         ).plan_for(object_id)
@@ -417,7 +458,7 @@ def create_app(
         return {
             "target": target_to_dict(target),
             "object_id": object_id,
-            "answer": _answer_to_dict(answer),
+            "answer": _answer_to_dict(answer, object_label),
             "reobservation": _reobservation_to_dict(reobservation),
             "matching_object_count": len(object_ids),
             "ambiguity": (
