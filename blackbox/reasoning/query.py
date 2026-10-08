@@ -2,6 +2,9 @@ from blackbox.schemas.answers import EvidenceGroundedAnswer
 from blackbox.world.projector import WorldStateProjector
 
 
+from collections.abc import Callable
+
+
 class BeliefQueryEngine:
     """Turns projected beliefs into evidence-grounded user answers.
 
@@ -9,8 +12,13 @@ class BeliefQueryEngine:
     transfers, or observations that are absent from the projector.
     """
 
-    def __init__(self, projector: WorldStateProjector) -> None:
+    def __init__(
+        self,
+        projector: WorldStateProjector,
+        object_label: Callable[[str], str] | None = None,
+    ) -> None:
         self.projector = projector
+        self.object_label = object_label or (lambda object_id: object_id)
 
     def where_is(
         self,
@@ -22,7 +30,7 @@ class BeliefQueryEngine:
         if not beliefs:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
-                answer=f"I do not have evidence for {object_id}.",
+                answer=f"I do not have evidence for {self.object_label(object_id)}.",
                 confidence=0.0,
                 provenance="no_evidence",
                 primary_hypothesis="unknown",
@@ -44,7 +52,7 @@ class BeliefQueryEngine:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
                 answer=(
-                    f"{object_id} is currently observed at its latest "
+                    f"{self.object_label(object_id)} is currently observed at its latest "
                     "bounding-box location."
                 ),
                 confidence=visibility.confidence,
@@ -72,7 +80,7 @@ class BeliefQueryEngine:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
                 answer=(
-                    f"{object_id} is not currently observed, and I do not "
+                    f"{self.object_label(object_id)} is not currently observed, and I do not "
                     "have enough evidence to rank location candidates."
                 ),
                 confidence=0.0,
@@ -123,8 +131,8 @@ class BeliefQueryEngine:
             ),
         )
 
-    @staticmethod
     def _format_location_answer(
+        self,
         object_id: str,
         value: str,
         weight: float,
@@ -137,11 +145,11 @@ class BeliefQueryEngine:
             location = "outside the currently observed scene"
         elif value.startswith("associated_with:"):
             related_object = value.split(":", 1)[1]
-            location = f"associated with {related_object}"
+            location = f"associated with {self.object_label(related_object)}"
         else:
             location = value
 
         return (
-            f"The leading hypothesis is that {object_id} is {location} "
+            f"The leading hypothesis is that {self.object_label(object_id)} is {location} "
             f"({percent}% heuristic weight)."
         )
