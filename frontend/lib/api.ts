@@ -153,6 +153,7 @@ export function whereIs(
       provenance: string;
       alternatives: Array<{
         hypothesis: string;
+        label: string;
         weight: number;
       }>;
       evidence: string[];
