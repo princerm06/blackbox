@@ -1,0 +1,38 @@
+[
+  {
+    "episode_id": "hero-01-observed",
+    "video_path": "data/episodes/raw/hero-01-observed.mp4",
+    "target_class": "keys",
+    "changed_while_unobserved": false,
+    "final_location_label": "desk",
+    "evaluation_frame": null,
+    "notes": "Observed baseline; keys remain visible."
+  },
+  {
+    "episode_id": "hero-02-moved-desk",
+    "video_path": "data/episodes/raw/hero-02-moved-desk.mp4",
+    "target_class": "keys",
+    "changed_while_unobserved": true,
+    "final_location_label": "different_desk_area",
+    "evaluation_frame": null,
+    "notes": "Keys move while occluded; backpack is not involved."
+  },
+  {
+    "episode_id": "hero-03-backpack",
+    "video_path": "data/episodes/raw/hero-03-backpack.mp4",
+    "target_class": "keys",
+    "changed_while_unobserved": true,
+    "final_location_label": "inside_or_near_backpack",
+    "evaluation_frame": null,
+    "notes": "Hero scenario; keys disappear during backpack interaction."
+  },
+  {
+    "episode_id": "hero-04-removed",
+    "video_path": "data/episodes/raw/hero-04-removed.mp4",
+    "target_class": "keys",
+    "changed_while_unobserved": true,
+    "final_location_label": "outside_observed_scene",
+    "evaluation_frame": null,
+    "notes": "Keys are removed from the camera's observed area."
+  }
+]
