@@ -83,6 +83,7 @@ class SessionVideoProcessor:
         pipeline = VideoDetectionPipeline(
             detector=detector,
             world_state=world_state,
+            max_processing_fps=2.0,
         )
         summary = pipeline.process(
             input_path=input_path,
