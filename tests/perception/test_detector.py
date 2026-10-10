@@ -182,3 +182,14 @@ def test_hybrid_detector_combines_detector_outputs() -> None:
         "backpack",
         "keys",
     ]
+
+
+def test_yolo_detector_can_filter_classes() -> None:
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    detector = YoloDetector(
+        confidence_threshold=0.30,
+        allowed_class_names=("person",),
+        model=FakeModel(),
+    )
+
+    assert detector.detect(frame) == []
