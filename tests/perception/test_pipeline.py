@@ -172,3 +172,52 @@ def test_annotate_frame_does_not_mutate_input() -> None:
         annotated,
         frame,
     )
+
+
+def test_pipeline_can_sample_expensive_inference(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "input.avi"
+    output_dir = tmp_path / "sampled-run"
+
+    create_test_video(input_path, frame_count=20)
+
+    pipeline = VideoDetectionPipeline(
+        detector=FakeDetector(),
+        tracker=IoUTracker(),
+        max_processing_fps=2.0,
+    )
+
+    summary = pipeline.process(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_annotated_video=False,
+    )
+
+    assert summary.frames_processed == 4
+    assert summary.detections_emitted == 4
+
+    records = [
+        json.loads(line)
+        for line in summary.observations_path.read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert [record["frame_index"] for record in records] == [
+        0,
+        5,
+        10,
+        15,
+    ]
+
+
+def test_pipeline_rejects_nonpositive_processing_fps() -> None:
+    try:
+        VideoDetectionPipeline(
+            detector=FakeDetector(),
+            max_processing_fps=0.0,
+        )
+    except ValueError as error:
+        assert "max_processing_fps must be positive" in str(error)
+    else:
+        raise AssertionError("expected ValueError")
