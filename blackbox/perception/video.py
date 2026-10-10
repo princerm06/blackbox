@@ -35,7 +35,11 @@ class VideoReader:
             if not success:
                 break
 
-            timestamp_ms = int(self.capture.get(cv2.CAP_PROP_POS_MSEC))
+            timestamp_ms = (
+                int(round((frame_index / self.fps) * 1000.0))
+                if self.fps > 0.0
+                else int(self.capture.get(cv2.CAP_PROP_POS_MSEC))
+            )
 
             yield VideoFrame(
                 frame_index=frame_index,
