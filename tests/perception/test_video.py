@@ -49,8 +49,7 @@ def test_video_reader_reads_frames(tmp_path: Path) -> None:
 
     timestamps = [frame.timestamp_ms for frame in frames]
 
-    assert timestamps == sorted(timestamps)
-    assert timestamps[0] == 0
+    assert timestamps == [0, 33, 67, 100, 133, 167]
 
     for frame in frames:
         assert frame.image is not None
