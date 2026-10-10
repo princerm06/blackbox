@@ -52,7 +52,7 @@ class RunStore:
 def default_detector_factory(registry: TargetRegistry) -> Detector:
     return HybridDetector(
         (
-            YoloDetector(),
+            YoloDetector(allowed_class_names=("person",)),
             TargetAwareOpenVocabularyDetector(registry=registry),
         )
     )
