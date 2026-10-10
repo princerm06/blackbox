@@ -23,6 +23,7 @@ class YoloDetector:
         self,
         model_name: str = "yolo11n.pt",
         confidence_threshold: float = 0.30,
+        allowed_class_names: tuple[str, ...] | None = None,
         model: Any | None = None,
     ) -> None:
         if not 0.0 <= confidence_threshold <= 1.0:
@@ -35,6 +36,11 @@ class YoloDetector:
 
         self.model = model
         self.confidence_threshold = confidence_threshold
+        self.allowed_class_names = (
+            frozenset(allowed_class_names)
+            if allowed_class_names is not None
+            else None
+        )
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self.model.predict(source=frame, verbose=False)
@@ -53,6 +59,12 @@ class YoloDetector:
 
             class_id = int(box.cls[0])
             class_name = str(result.names[class_id])
+            if (
+                self.allowed_class_names is not None
+                and class_name not in self.allowed_class_names
+            ):
+                continue
+
             x1, y1, x2, y2 = (float(value) for value in box.xyxy[0].tolist())
 
             detections.append(
