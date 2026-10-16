@@ -12,6 +12,8 @@ from blackbox.perception.pipeline import (
     ProcessingSummary,
     VideoDetectionPipeline,
 )
+from blackbox.perception.identity import ObjectIdentityResolver
+from blackbox.perception.tracker import IoUTracker
 from blackbox.perception.targets import TargetRegistry
 from blackbox.world.projector import WorldStateProjector
 
@@ -82,6 +84,14 @@ class SessionVideoProcessor:
         world_state = WorldStateProjector()
         pipeline = VideoDetectionPipeline(
             detector=detector,
+            tracker=IoUTracker(
+                iou_threshold=0.15,
+                max_missed_frames=5,
+            ),
+            identity_resolver=ObjectIdentityResolver(
+                reid_iou_threshold=0.25,
+                max_reid_gap_frames=20,
+            ),
             world_state=world_state,
             max_processing_fps=2.0,
         )
