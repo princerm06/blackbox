@@ -322,7 +322,7 @@ class VideoDetectionPipeline:
                     )
 
                     identity_assignments = self.identity_resolver.update(
-                        frame_index=video_frame.frame_index,
+                        frame_index=frames_processed,
                         observations=track_observations,
                     )
 
