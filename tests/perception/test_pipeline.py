@@ -221,3 +221,37 @@ def test_pipeline_rejects_nonpositive_processing_fps() -> None:
         assert "max_processing_fps must be positive" in str(error)
     else:
         raise AssertionError("expected ValueError")
+
+
+class RecordingIdentityResolver:
+    def __init__(self):
+        self.frame_indices = []
+
+    def update(self, frame_index, observations):
+        self.frame_indices.append(frame_index)
+        return []
+
+
+def test_sampled_pipeline_uses_processed_steps_for_identity_gaps(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "input.avi"
+    output_dir = tmp_path / "identity-steps"
+
+    create_test_video(input_path, frame_count=20)
+    identity = RecordingIdentityResolver()
+
+    pipeline = VideoDetectionPipeline(
+        detector=FakeDetector(),
+        tracker=IoUTracker(),
+        identity_resolver=identity,
+        max_processing_fps=2.0,
+    )
+
+    pipeline.process(
+        input_path=input_path,
+        output_dir=output_dir,
+        write_annotated_video=False,
+    )
+
+    assert identity.frame_indices == [0, 1, 2, 3]
