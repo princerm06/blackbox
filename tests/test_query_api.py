@@ -303,3 +303,99 @@ def test_where_query_prefers_persistent_identity_and_ignores_one_frame_fragment(
     assert payload["object_id"] == "object-2"
     assert payload["matching_object_count"] == 2
     assert payload["ambiguity"] is None
+
+
+class SequentialFragmentsProcessor:
+    def process(self, registry, input_path, output_dir):
+        world_state = WorldStateProjector()
+
+        first = TrackObservation(
+            track_id="track-a",
+            class_name="keys",
+            confidence=0.9,
+            bbox=BoundingBox(10, 10, 30, 30),
+        )
+        world_state.update(
+            frame_index=0,
+            timestamp_ms=0,
+            identity_assignments=[
+                IdentityAssignment(
+                    object_id="object-a",
+                    track_id="track-a",
+                    class_name="keys",
+                    confidence=0.9,
+                    provenance=IdentityProvenance.OBSERVED_TRACK,
+                    observation=first,
+                )
+            ],
+            events=[],
+        )
+
+        second = TrackObservation(
+            track_id="track-b",
+            class_name="keys",
+            confidence=0.9,
+            bbox=BoundingBox(12, 12, 32, 32),
+        )
+        world_state.update(
+            frame_index=1,
+            timestamp_ms=500,
+            identity_assignments=[
+                IdentityAssignment(
+                    object_id="object-b",
+                    track_id="track-b",
+                    class_name="keys",
+                    confidence=0.9,
+                    provenance=IdentityProvenance.OBSERVED_TRACK,
+                    observation=second,
+                )
+            ],
+            events=[],
+        )
+
+        observations = output_dir / "observations.jsonl"
+        observations.write_text("{}\n", encoding="utf-8")
+
+        return ProcessedRun(
+            summary=ProcessingSummary(
+                frames_processed=2,
+                detections_emitted=2,
+                track_observations_emitted=2,
+                identity_assignments_emitted=2,
+                events_emitted=0,
+                observations_path=observations,
+                annotated_video_path=None,
+            ),
+            world_state=world_state,
+            source_video_path=input_path,
+        )
+
+
+def test_where_query_does_not_flag_sequential_identity_fragments_as_multiple_objects(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=SequentialFragmentsProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    payload = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+        "/targets/my-keys/where"
+    ).json()
+
+    assert payload["matching_object_count"] == 2
+    assert payload["ambiguity"] is None
