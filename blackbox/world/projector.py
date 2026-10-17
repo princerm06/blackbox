@@ -55,6 +55,7 @@ class _ObjectHistory:
     last_observation: TrackObservation | None = None
     last_frame_index: int | None = None
     last_timestamp_ms: int | None = None
+    observation_count: int = 0
 
 
 class WorldStateProjector:
@@ -111,6 +112,7 @@ class WorldStateProjector:
             history.last_observation = assignment.observation
             history.last_frame_index = frame_index
             history.last_timestamp_ms = timestamp_ms
+            history.observation_count += 1
 
         for relation in infer_spatial_relations(
             assignments=identity_assignments,
@@ -520,6 +522,10 @@ class WorldStateProjector:
                 ),
             )
         )
+
+    def observation_count(self, object_id: str) -> int:
+        history = self._histories.get(object_id)
+        return history.observation_count if history is not None else 0
 
     def object_ids_for_class(
         self,
