@@ -193,3 +193,70 @@ def test_yolo_detector_can_filter_classes() -> None:
     )
 
     assert detector.detect(frame) == []
+
+
+class FakeDuplicateZeroShotPipeline:
+    def __call__(self, image, candidate_labels):
+        assert candidate_labels == ["keys"]
+        return [
+            {
+                "score": 0.91,
+                "label": "keys",
+                "box": {
+                    "xmin": 10,
+                    "ymin": 10,
+                    "xmax": 60,
+                    "ymax": 60,
+                },
+            },
+            {
+                "score": 0.73,
+                "label": "keys",
+                "box": {
+                    "xmin": 12,
+                    "ymin": 12,
+                    "xmax": 61,
+                    "ymax": 61,
+                },
+            },
+            {
+                "score": 0.68,
+                "label": "keys",
+                "box": {
+                    "xmin": 200,
+                    "ymin": 100,
+                    "xmax": 250,
+                    "ymax": 150,
+                },
+            },
+        ]
+
+
+def test_open_vocabulary_detector_deduplicates_overlapping_same_class_boxes() -> None:
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    detector = OpenVocabularyDetector(
+        prompts=("keys",),
+        confidence_threshold=0.25,
+        nms_iou_threshold=0.45,
+        pipeline_model=FakeDuplicateZeroShotPipeline(),
+    )
+
+    detections = detector.detect(frame)
+
+    assert len(detections) == 2
+    assert [detection.confidence for detection in detections] == [0.91, 0.68]
+    assert detections[0].bbox.x1 == 10
+    assert detections[1].bbox.x1 == 200
+
+
+def test_open_vocabulary_detector_rejects_invalid_nms_threshold() -> None:
+    try:
+        OpenVocabularyDetector(
+            prompts=("keys",),
+            nms_iou_threshold=1.5,
+            pipeline_model=FakeDuplicateZeroShotPipeline(),
+        )
+    except ValueError as error:
+        assert "nms_iou_threshold" in str(error)
+    else:
+        raise AssertionError("Expected invalid NMS threshold to raise ValueError")
