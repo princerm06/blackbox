@@ -158,3 +158,77 @@ def test_query_handles_unknown_object() -> None:
 
     assert answer.confidence == 0.0
     assert answer.primary_hypothesis == "unknown"
+
+
+def test_query_ignores_same_class_identity_fragments_in_location_candidates() -> None:
+    projector = WorldStateProjector()
+    projector.update(
+        frame_index=0,
+        timestamp_ms=0,
+        identity_assignments=[
+            assignment(
+                "keys-track-a",
+                "keys-object-a",
+                BoundingBox(0, 0, 40, 40),
+                "keys",
+            ),
+            assignment(
+                "keys-track-b",
+                "keys-object-b",
+                BoundingBox(10, 0, 50, 40),
+                "keys",
+            ),
+            assignment(
+                "bag-track",
+                "bag-object",
+                BoundingBox(20, 0, 120, 100),
+                "bag",
+            ),
+        ],
+        events=[
+            appeared("keys-track-a", "keys"),
+            appeared("keys-track-b", "keys"),
+            appeared("bag-track", "bag"),
+        ],
+    )
+    projector.update(
+        frame_index=1,
+        timestamp_ms=500,
+        identity_assignments=[
+            assignment(
+                "bag-track",
+                "bag-object",
+                BoundingBox(20, 0, 120, 100),
+                "bag",
+            )
+        ],
+        events=[
+            WorldEvent(
+                event_type=EventType.OBJECT_DISAPPEARED,
+                frame_index=1,
+                timestamp_ms=500,
+                subject_track_id="keys-track-a",
+                class_name="keys",
+                confidence=1.0,
+                provenance=EventProvenance.INFERRED,
+                metadata={},
+            ),
+            WorldEvent(
+                event_type=EventType.OBJECT_MOVED,
+                frame_index=1,
+                timestamp_ms=500,
+                subject_track_id="bag-track",
+                class_name="bag",
+                confidence=0.9,
+                provenance=EventProvenance.OBSERVED,
+                metadata={},
+            ),
+        ],
+    )
+
+    answer = BeliefQueryEngine(projector).where_is("keys-object-a")
+
+    values = {answer.primary_hypothesis}
+    values.update(value for value, _ in answer.alternatives)
+
+    assert "associated_with:keys-object-b" not in values
