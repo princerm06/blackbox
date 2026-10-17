@@ -1,3 +1,4 @@
+import os
 from typing import Any, Protocol
 
 import numpy as np
@@ -5,6 +6,24 @@ import numpy as np
 from blackbox.schemas.perception import BoundingBox, Detection
 from blackbox.perception.targets import TargetRegistry
 
+
+
+def _maybe_quantize_pipeline(pipeline_model: Any) -> Any:
+    """Optionally quantize zero-shot detector weights for low-memory CPU deploys."""
+    if os.getenv("BLACKBOX_QUANTIZE_OPEN_VOCAB", "").strip().lower() not in {
+        "1", "true", "yes",
+    }:
+        return pipeline_model
+
+    import torch
+
+    torch.ao.quantization.quantize_dynamic(
+        pipeline_model.model,
+        {torch.nn.Linear},
+        dtype=torch.qint8,
+        inplace=True,
+    )
+    return pipeline_model
 
 
 def _intersection_over_union(first: BoundingBox, second: BoundingBox) -> float:
@@ -170,7 +189,7 @@ class OpenVocabularyDetector:
                 model=model_name,
             )
 
-        self.pipeline_model = pipeline_model
+        self.pipeline_model = _maybe_quantize_pipeline(pipeline_model)
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         from PIL import Image
