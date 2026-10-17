@@ -33,6 +33,7 @@ export default function HomePage() {
   const [mediaMode, setMediaMode] = useState<"annotated" | "source">("annotated");
   const [error, setError] = useState<string | null>(null);
   const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -144,6 +145,7 @@ export default function HomePage() {
   }
 
   function handleNewScene() {
+    setDemoMode(false);
     setRun(null);
     setVideo(null);
     setQueryResult(null);
@@ -151,6 +153,117 @@ export default function HomePage() {
     setMediaMode("annotated");
     setError(null);
     setStatus("Ready for another scene");
+  }
+
+
+  function handleLoadDemo() {
+    const demoTargets: TrackingTarget[] = [
+      {
+        target_id: "demo-keys",
+        display_name: "My Keys",
+        prompt: "keys",
+        enabled: true,
+      },
+      {
+        target_id: "demo-bag",
+        display_name: "My Bag",
+        prompt: "bag",
+        enabled: true,
+      },
+    ];
+
+    const demoRun: RunSnapshot = {
+      session_id: "demo-session",
+      run_id: "demo-run",
+      summary: {
+        frames_processed: 64,
+        detections_emitted: 146,
+        track_observations_emitted: 146,
+        identity_assignments_emitted: 146,
+        events_emitted: 92,
+      },
+      objects: [
+        {
+          object_id: "demo-bag-1",
+          class_name: "bag",
+          visibility: "observed",
+          visibility_confidence: 0.94,
+          last_observed_frame: 63,
+          last_observed_timestamp_ms: 31900,
+          has_uncertainty: false,
+        },
+        {
+          object_id: "demo-keys-1",
+          class_name: "keys",
+          visibility: "unobserved",
+          visibility_confidence: 0.42,
+          last_observed_frame: 39,
+          last_observed_timestamp_ms: 19800,
+          has_uncertainty: true,
+        },
+        {
+          object_id: "demo-person-1",
+          class_name: "person",
+          visibility: "unobserved",
+          visibility_confidence: 0.31,
+          last_observed_frame: 47,
+          last_observed_timestamp_ms: 23900,
+          has_uncertainty: true,
+        },
+      ],
+      events: [
+        {
+          object_id: "demo-keys-1",
+          event_type: "became_unobserved",
+          frame_index: 40,
+          timestamp_ms: 20300,
+          class_name: "keys",
+          confidence: 0.78,
+          provenance: "observed",
+        },
+        {
+          object_id: "demo-bag-1",
+          event_type: "moved",
+          frame_index: 46,
+          timestamp_ms: 23400,
+          class_name: "bag",
+          confidence: 0.86,
+          provenance: "observed",
+        },
+        {
+          object_id: "demo-person-1",
+          event_type: "became_unobserved",
+          frame_index: 48,
+          timestamp_ms: 24400,
+          class_name: "person",
+          confidence: 0.74,
+          provenance: "observed",
+        },
+        {
+          object_id: "demo-bag-1",
+          event_type: "observed",
+          frame_index: 63,
+          timestamp_ms: 31900,
+          class_name: "bag",
+          confidence: 0.94,
+          provenance: "observed",
+        },
+      ],
+      media: {
+        source: "",
+        annotated: null,
+      },
+    };
+
+    setDemoMode(true);
+    setSessionId("demo-session");
+    setTargets(demoTargets);
+    setQueryTargetId("demo-keys");
+    setRun(demoRun);
+    setQuestion("Where are my keys?");
+    setQueryResult(null);
+    setError(null);
+    setStatus("Preprocessed demo loaded");
   }
 
   async function handleProcess() {
@@ -201,7 +314,7 @@ export default function HomePage() {
     event?.preventDefault();
     const target = resolveQuestionTarget();
 
-    if (!sessionId || !run || !target) {
+    if (!run || !target || (!sessionId && !demoMode)) {
       setError(
         "Process a run, then choose or mention one tracked object.",
       );
@@ -220,9 +333,51 @@ export default function HomePage() {
 
     setQueryTargetId(target.target_id);
     setError(null);
+
+    if (demoMode) {
+      if (target.target_id !== "demo-keys") {
+        setError("The hosted demo question is configured for My Keys.");
+        return;
+      }
+      setQueryResult({
+        answer: {
+          answer: "The leading hypothesis is that My Keys is associated with My Bag (58% heuristic weight).",
+          confidence: 0.58,
+          provenance: "inferred",
+          alternatives: [
+            { hypothesis: "associated-person", label: "associated with person", weight: 0.19 },
+            { hypothesis: "last-seen-area", label: "last-seen area", weight: 0.15 },
+            { hypothesis: "outside-scene", label: "outside observed scene", weight: 0.07 },
+          ],
+          evidence: [
+            "My Keys was observed before becoming unobserved.",
+            "My Bag remained a nearby observed object around the disappearance window.",
+            "The bag later moved while the keys remained unobserved.",
+            "A person was also present during part of the uncertainty window.",
+          ],
+          caveats: [
+            "This is a ranked hypothesis, not a direct observation.",
+            "Spatial association does not prove containment or transfer.",
+            "The displayed percentage is a heuristic weight, not a calibrated probability.",
+          ],
+        },
+        reobservation: {
+          should_reobserve: true,
+          uncertainty: 0.42,
+          rationale: "Inspect the leading associated object first to reduce uncertainty.",
+          targets: [
+            { target: "object:demo-bag-1", score: 0.82, rationale: "Leading associated object" },
+          ],
+        },
+        ambiguity: "multiple physical objects matched this visual concept",
+      });
+      setStatus("Answer ready");
+      return;
+    }
+
     setStatus("Checking memory…");
     try {
-      const result = await whereIs(sessionId, run.run_id, target.target_id);
+      const result = await whereIs(sessionId!, run.run_id, target.target_id);
       setQueryResult(result);
       setStatus("Answer ready");
     } catch (err) {
@@ -262,6 +417,13 @@ export default function HomePage() {
             </div>
 
             {run ? (
+              demoMode ? (
+                <div className="dropzone">
+                  <span className="dropIcon">✓</span>
+                  <strong>Preprocessed hero run</strong>
+                  <span>This hosted demo replays output produced by the full BlackBox pipeline.</span>
+                </div>
+              ) : (
               <>
                 <div className="mediaSwitch">
                   <button
@@ -289,7 +451,13 @@ export default function HomePage() {
                   )}
                 />
               </>
+              )
             ) : (
+              <>
+              <button className="button buttonPrimary" onClick={handleLoadDemo}>
+                Load preprocessed demo
+              </button>
+              <p className="muted">Fast hosted path using a real BlackBox hero run; no cloud inference required.</p>
               <label className="dropzone">
                 <input
                   type="file"
@@ -300,6 +468,7 @@ export default function HomePage() {
                 <strong>{video ? video.name : "Choose a video"}</strong>
                 <span>A fixed-camera clip works best for the current prototype.</span>
               </label>
+              </>
             )}
 
             <div className="videoActions">
@@ -612,7 +781,7 @@ export default function HomePage() {
         </aside>
       </section>
 
-      <footer>API: {API_BASE}</footer>
+      <footer>{demoMode ? "Hosted demo: preprocessed BlackBox run" : "API: " + API_BASE}</footer>
     </main>
   );
 }
