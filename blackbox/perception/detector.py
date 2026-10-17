@@ -6,6 +6,54 @@ from blackbox.schemas.perception import BoundingBox, Detection
 from blackbox.perception.targets import TargetRegistry
 
 
+
+def _intersection_over_union(first: BoundingBox, second: BoundingBox) -> float:
+    x1 = max(first.x1, second.x1)
+    y1 = max(first.y1, second.y1)
+    x2 = min(first.x2, second.x2)
+    y2 = min(first.y2, second.y2)
+
+    width = max(0.0, x2 - x1)
+    height = max(0.0, y2 - y1)
+    intersection = width * height
+    union = first.area + second.area - intersection
+
+    if union <= 0.0:
+        return 0.0
+
+    return intersection / union
+
+
+def _deduplicate_same_class(
+    detections: list[Detection],
+    iou_threshold: float,
+) -> list[Detection]:
+    """Suppress overlapping boxes for the same semantic concept.
+
+    Open-vocabulary detectors can emit several boxes for one physical object.
+    Keeping only the strongest overlapping detection prevents a single keyring
+    from spawning several tracks while preserving distinct same-class objects
+    that occupy different image regions.
+    """
+    kept: list[Detection] = []
+
+    for detection in sorted(
+        detections,
+        key=lambda item: item.confidence,
+        reverse=True,
+    ):
+        duplicate = any(
+            existing.class_name == detection.class_name
+            and _intersection_over_union(existing.bbox, detection.bbox)
+            >= iou_threshold
+            for existing in kept
+        )
+        if not duplicate:
+            kept.append(detection)
+
+    return kept
+
+
 class Detector(Protocol):
     def detect(self, frame: np.ndarray) -> list[Detection]:
         ...
@@ -97,6 +145,7 @@ class OpenVocabularyDetector:
         confidence_threshold: float = 0.25,
         model_name: str = "google/owlv2-base-patch16-ensemble",
         pipeline_model: Any | None = None,
+        nms_iou_threshold: float = 0.45,
     ) -> None:
         if not prompts:
             raise ValueError("prompts must not be empty")
@@ -106,9 +155,12 @@ class OpenVocabularyDetector:
             raise ValueError(
                 "confidence_threshold must be between 0 and 1"
             )
+        if not 0.0 <= nms_iou_threshold <= 1.0:
+            raise ValueError("nms_iou_threshold must be between 0 and 1")
 
         self.prompts = tuple(prompt.strip() for prompt in prompts)
         self.confidence_threshold = confidence_threshold
+        self.nms_iou_threshold = nms_iou_threshold
 
         if pipeline_model is None:
             from transformers import pipeline
@@ -150,7 +202,10 @@ class OpenVocabularyDetector:
                 )
             )
 
-        return detections
+        return _deduplicate_same_class(
+            detections,
+            self.nms_iou_threshold,
+        )
 
 
 class HybridDetector:
@@ -182,14 +237,19 @@ class TargetAwareOpenVocabularyDetector:
         confidence_threshold: float = 0.25,
         model_name: str = "google/owlv2-base-patch16-ensemble",
         pipeline_model: Any | None = None,
+        nms_iou_threshold: float = 0.45,
     ) -> None:
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
                 "confidence_threshold must be between 0 and 1"
             )
 
+        if not 0.0 <= nms_iou_threshold <= 1.0:
+            raise ValueError("nms_iou_threshold must be between 0 and 1")
+
         self.registry = registry
         self.confidence_threshold = confidence_threshold
+        self.nms_iou_threshold = nms_iou_threshold
 
         if pipeline_model is None:
             from transformers import pipeline
@@ -235,4 +295,7 @@ class TargetAwareOpenVocabularyDetector:
                 )
             )
 
-        return detections
+        return _deduplicate_same_class(
+            detections,
+            self.nms_iou_threshold,
+        )
