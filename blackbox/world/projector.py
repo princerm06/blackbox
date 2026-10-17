@@ -90,6 +90,7 @@ class WorldStateProjector:
         ] = {}
         self._current_frame_index = 0
         self._current_timestamp_ms = 0
+        self._max_simultaneous_by_class: dict[str, int] = {}
 
     def update(
         self,
@@ -101,7 +102,12 @@ class WorldStateProjector:
         self._current_frame_index = frame_index
         self._current_timestamp_ms = timestamp_ms
 
+        objects_by_class: dict[str, set[str]] = {}
         for assignment in identity_assignments:
+            objects_by_class.setdefault(
+                assignment.class_name,
+                set(),
+            ).add(assignment.object_id)
             self._track_to_object[assignment.track_id] = assignment.object_id
 
             history = self._histories.setdefault(
@@ -113,6 +119,12 @@ class WorldStateProjector:
             history.last_frame_index = frame_index
             history.last_timestamp_ms = timestamp_ms
             history.observation_count += 1
+
+        for class_name, object_ids in objects_by_class.items():
+            self._max_simultaneous_by_class[class_name] = max(
+                self._max_simultaneous_by_class.get(class_name, 0),
+                len(object_ids),
+            )
 
         for relation in infer_spatial_relations(
             assignments=identity_assignments,
@@ -522,6 +534,9 @@ class WorldStateProjector:
                 ),
             )
         )
+
+    def max_simultaneous_objects_for_class(self, class_name: str) -> int:
+        return self._max_simultaneous_by_class.get(class_name, 0)
 
     def observation_count(self, object_id: str) -> int:
         history = self._histories.get(object_id)
