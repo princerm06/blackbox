@@ -182,13 +182,17 @@ def _run_snapshot(
     }
 
 
+_DEFAULT_PERSIST_PATH = Path("runs") / "app" / ".sessions.json"
+
+
 def create_app(
     store: SessionStore | None = None,
     processor: SessionVideoProcessor | None = None,
     run_store: RunStore | None = None,
     workspace_root: Path = Path("runs") / "app",
+    persist_path: Path | None = _DEFAULT_PERSIST_PATH,
 ) -> FastAPI:
-    sessions = store or SessionStore()
+    sessions = store or SessionStore(persist_path=persist_path)
     video_processor = processor or SessionVideoProcessor()
     runs = run_store or RunStore()
     app = FastAPI(title="BlackBox", version="0.1.0")
@@ -242,6 +246,7 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+        sessions.save()
         return target_to_dict(target)
 
     @app.patch("/sessions/{session_id}/targets/{target_id}")
@@ -259,6 +264,7 @@ def create_app(
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
+        sessions.save()
         return target_to_dict(target)
 
     @app.delete(
@@ -271,6 +277,8 @@ def create_app(
             session.targets.unregister(target_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+        sessions.save()
 
     @app.post("/sessions/{session_id}/videos", status_code=201)
     async def process_video(

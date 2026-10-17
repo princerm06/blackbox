@@ -88,6 +88,40 @@ Run tests:
 pytest -q
 ```
 
+Process a video:
+
+```bash
+python scripts/process_video.py path/to/video.mp4
+```
+
+## Session persistence
+
+The API server (started via `uvicorn blackbox.api:app`) automatically persists
+sessions and their registered tracking targets to
+`runs/app/.sessions.json`.  The file is written atomically after every
+mutation (create session, register/update/remove target), so a clean
+restart restores the frontend's saved `session_id` and all associated
+targets without requiring the user to recreate them.
+
+The file format is plain JSON and human-readable.  Deleting it resets all
+sessions (equivalent to a clean slate).  No additional dependencies are
+required; the persistence layer uses the Python standard library only.
+
+Run the controlled calibration benchmark:
+
+```bash
+python scripts/run_calibration_experiment.py
+```
+
+Train and evaluate the first learned change model:
+
+```bash
+python scripts/run_learned_experiment.py
+```
+
+Experiment outputs are written under `runs/` and are ignored by git.
+
+(Add persistent session storage with IBM Bob)
 ## Research direction
 
 The current research question is:
