@@ -461,15 +461,11 @@ def create_app(
             run.world_state
         ).plan_for(object_id)
 
-        primary_support = run.world_state.observation_count(object_id)
-        meaningful_competitors = [
-            candidate_id
-            for candidate_id in object_ids
-            if candidate_id != object_id
-            and run.world_state.observation_count(candidate_id) >= 3
-            and run.world_state.observation_count(candidate_id)
-            >= (0.60 * primary_support)
-        ]
+        max_simultaneous_matches = (
+            run.world_state.max_simultaneous_objects_for_class(
+                target.prompt
+            )
+        )
 
         return {
             "target": target_to_dict(target),
@@ -479,7 +475,7 @@ def create_app(
             "matching_object_count": len(object_ids),
             "ambiguity": (
                 "multiple physical objects matched this visual concept"
-                if meaningful_competitors
+                if max_simultaneous_matches > 1
                 else None
             ),
         }
