@@ -2,6 +2,9 @@ from blackbox.schemas.answers import EvidenceGroundedAnswer
 from blackbox.world.projector import WorldStateProjector
 
 
+from collections.abc import Callable
+
+
 class BeliefQueryEngine:
     """Turns projected beliefs into evidence-grounded user answers.
 
@@ -9,8 +12,13 @@ class BeliefQueryEngine:
     transfers, or observations that are absent from the projector.
     """
 
-    def __init__(self, projector: WorldStateProjector) -> None:
+    def __init__(
+        self,
+        projector: WorldStateProjector,
+        object_label: Callable[[str], str] | None = None,
+    ) -> None:
         self.projector = projector
+        self.object_label = object_label or (lambda object_id: object_id)
 
     def where_is(
         self,
@@ -22,7 +30,7 @@ class BeliefQueryEngine:
         if not beliefs:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
-                answer=f"I do not have evidence for {object_id}.",
+                answer=f"I do not have evidence for {self.object_label(object_id)}.",
                 confidence=0.0,
                 provenance="no_evidence",
                 primary_hypothesis="unknown",
@@ -44,7 +52,7 @@ class BeliefQueryEngine:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
                 answer=(
-                    f"{object_id} is currently observed at its latest "
+                    f"{self.object_label(object_id)} is currently observed at its latest "
                     "bounding-box location."
                 ),
                 confidence=visibility.confidence,
@@ -72,7 +80,7 @@ class BeliefQueryEngine:
             return EvidenceGroundedAnswer(
                 subject_object_id=object_id,
                 answer=(
-                    f"{object_id} is not currently observed, and I do not "
+                    f"{self.object_label(object_id)} is not currently observed, and I do not "
                     "have enough evidence to rank location candidates."
                 ),
                 confidence=0.0,
@@ -85,34 +93,70 @@ class BeliefQueryEngine:
                 ),
             )
 
+        subject_class = self.projector.object_class(object_id)
+        usable = []
+        for hypothesis in location.hypotheses:
+            value = str(hypothesis.value)
+            if value.startswith("associated_with:"):
+                related_object = value.split(":", 1)[1]
+                if (
+                    subject_class is not None
+                    and self.projector.object_class(related_object)
+                    == subject_class
+                ):
+                    continue
+            usable.append(hypothesis)
+
+        if not usable:
+            usable = list(location.hypotheses)
+
+        total_weight = sum(hypothesis.weight for hypothesis in usable)
         ranked = sorted(
-            location.hypotheses,
-            key=lambda hypothesis: hypothesis.weight,
+            (
+                (hypothesis, hypothesis.weight / total_weight)
+                for hypothesis in usable
+            ),
+            key=lambda item: item[1],
             reverse=True,
         )
-        primary = ranked[0]
+        primary, primary_weight = ranked[0]
         alternatives = tuple(
-            (str(hypothesis.value), hypothesis.weight)
-            for hypothesis in ranked[1:]
+            (str(hypothesis.value), weight)
+            for hypothesis, weight in ranked[1:]
         )
 
+        relevant_signals = []
+        for signal in self.projector.opportunities_for(object_id):
+            if (
+                signal.source_object_id is not None
+                and subject_class is not None
+                and self.projector.object_class(signal.source_object_id)
+                == subject_class
+            ):
+                continue
+            relevant_signals.append(signal)
+
+        relevant_signals.sort(
+            key=lambda signal: signal.strength,
+            reverse=True,
+        )
         evidence = tuple(
             dict.fromkeys(
                 signal.rationale
-                for signal in self.projector.opportunities_for(object_id)
+                for signal in relevant_signals
             )
-        )
+        )[:6]
 
         answer = self._format_location_answer(
             object_id,
             str(primary.value),
-            primary.weight,
+            primary_weight,
         )
 
         return EvidenceGroundedAnswer(
             subject_object_id=object_id,
             answer=answer,
-            confidence=primary.weight,
+            confidence=primary_weight,
             provenance="inferred",
             primary_hypothesis=str(primary.value),
             alternatives=alternatives,
@@ -123,8 +167,8 @@ class BeliefQueryEngine:
             ),
         )
 
-    @staticmethod
     def _format_location_answer(
+        self,
         object_id: str,
         value: str,
         weight: float,
@@ -137,11 +181,11 @@ class BeliefQueryEngine:
             location = "outside the currently observed scene"
         elif value.startswith("associated_with:"):
             related_object = value.split(":", 1)[1]
-            location = f"associated with {related_object}"
+            location = f"associated with {self.object_label(related_object)}"
         else:
             location = value
 
         return (
-            f"The leading hypothesis is that {object_id} is {location} "
+            f"The leading hypothesis is that {self.object_label(object_id)} is {location} "
             f"({percent}% heuristic weight)."
         )

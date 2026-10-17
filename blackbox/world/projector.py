@@ -55,6 +55,7 @@ class _ObjectHistory:
     last_observation: TrackObservation | None = None
     last_frame_index: int | None = None
     last_timestamp_ms: int | None = None
+    observation_count: int = 0
 
 
 class WorldStateProjector:
@@ -89,6 +90,7 @@ class WorldStateProjector:
         ] = {}
         self._current_frame_index = 0
         self._current_timestamp_ms = 0
+        self._max_simultaneous_by_class: dict[str, int] = {}
 
     def update(
         self,
@@ -100,7 +102,12 @@ class WorldStateProjector:
         self._current_frame_index = frame_index
         self._current_timestamp_ms = timestamp_ms
 
+        objects_by_class: dict[str, set[str]] = {}
         for assignment in identity_assignments:
+            objects_by_class.setdefault(
+                assignment.class_name,
+                set(),
+            ).add(assignment.object_id)
             self._track_to_object[assignment.track_id] = assignment.object_id
 
             history = self._histories.setdefault(
@@ -111,6 +118,13 @@ class WorldStateProjector:
             history.last_observation = assignment.observation
             history.last_frame_index = frame_index
             history.last_timestamp_ms = timestamp_ms
+            history.observation_count += 1
+
+        for class_name, object_ids in objects_by_class.items():
+            self._max_simultaneous_by_class[class_name] = max(
+                self._max_simultaneous_by_class.get(class_name, 0),
+                len(object_ids),
+            )
 
         for relation in infer_spatial_relations(
             assignments=identity_assignments,
@@ -492,6 +506,54 @@ class WorldStateProjector:
             updated_frame_index=self._current_frame_index,
             updated_timestamp_ms=self._current_timestamp_ms,
         )
+
+    def object_class(self, object_id: str) -> str | None:
+        history = self._histories.get(object_id)
+        if history is None or history.last_observation is None:
+            return None
+        return history.last_observation.class_name
+
+    def all_object_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._histories))
+
+    def all_events(self) -> tuple[tuple[str, WorldEvent], ...]:
+        events: list[tuple[str, WorldEvent]] = []
+        for object_id, history in self._histories.items():
+            events.extend(
+                (object_id, event)
+                for event in history.events
+            )
+        return tuple(
+            sorted(
+                events,
+                key=lambda item: (
+                    item[1].frame_index,
+                    item[1].timestamp_ms,
+                    item[0],
+                    item[1].event_type.value,
+                ),
+            )
+        )
+
+    def max_simultaneous_objects_for_class(self, class_name: str) -> int:
+        return self._max_simultaneous_by_class.get(class_name, 0)
+
+    def observation_count(self, object_id: str) -> int:
+        history = self._histories.get(object_id)
+        return history.observation_count if history is not None else 0
+
+    def object_ids_for_class(
+        self,
+        class_name: str,
+    ) -> tuple[str, ...]:
+        matches = []
+        for object_id, history in self._histories.items():
+            observation = history.last_observation
+            if observation is None:
+                continue
+            if observation.class_name == class_name:
+                matches.append(object_id)
+        return tuple(sorted(matches))
 
     def all_beliefs(
         self,

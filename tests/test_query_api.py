@@ -1,0 +1,401 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from blackbox.api import create_app
+from blackbox.app_processing import ProcessedRun
+from blackbox.perception.pipeline import ProcessingSummary
+from blackbox.schemas.events import (
+    EventProvenance,
+    EventType,
+    WorldEvent,
+)
+from blackbox.schemas.identity import (
+    IdentityAssignment,
+    IdentityProvenance,
+)
+from blackbox.schemas.perception import BoundingBox, TrackObservation
+from blackbox.sessions import SessionStore
+from blackbox.world.projector import WorldStateProjector
+
+
+class QueryableProcessor:
+    def process(self, registry, input_path, output_dir):
+        observation = TrackObservation(
+            track_id="track-1",
+            class_name="keys",
+            confidence=0.91,
+            bbox=BoundingBox(10, 20, 50, 60),
+        )
+        assignment = IdentityAssignment(
+            object_id="object-1",
+            track_id="track-1",
+            class_name="keys",
+            confidence=0.91,
+            provenance=IdentityProvenance.OBSERVED_TRACK,
+            observation=observation,
+        )
+        event = WorldEvent(
+            event_type=EventType.OBJECT_APPEARED,
+            frame_index=0,
+            timestamp_ms=0,
+            subject_track_id="track-1",
+            class_name="keys",
+            confidence=0.91,
+            provenance=EventProvenance.OBSERVED,
+            metadata={},
+        )
+
+        world_state = WorldStateProjector()
+        world_state.update(
+            frame_index=0,
+            timestamp_ms=0,
+            identity_assignments=[assignment],
+            events=[event],
+        )
+
+        observations = output_dir / "observations.jsonl"
+        observations.write_text("{}\n", encoding="utf-8")
+
+        return ProcessedRun(
+            summary=ProcessingSummary(
+                frames_processed=1,
+                detections_emitted=1,
+                track_observations_emitted=1,
+                identity_assignments_emitted=1,
+                events_emitted=1,
+                observations_path=observations,
+                annotated_video_path=None,
+            ),
+            world_state=world_state,
+            source_video_path=input_path,
+        )
+
+
+def test_where_query_returns_grounded_answer(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+        "/targets/my-keys/where"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["target"]["display_name"] == "My Keys"
+    assert payload["object_id"] == "object-1"
+    assert payload["answer"]["provenance"] == "observed"
+    assert "My Keys" in payload["answer"]["answer"]
+    assert payload["answer"]["confidence"] == 1.0
+    assert payload["reobservation"]["should_reobserve"] is False
+    assert payload["ambiguity"] is None
+
+
+def test_where_query_reports_target_not_detected(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "Wallet", "prompt": "wallet"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+        "/targets/wallet/where"
+    )
+
+    assert response.status_code == 404
+    assert "no detected object matched" in response.json()["detail"]
+
+
+
+def test_run_objects_endpoint_returns_status_summary(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/objects"
+    )
+
+    assert response.status_code == 200
+    objects = response.json()["objects"]
+    assert len(objects) == 1
+    assert objects[0]["object_id"] == "object-1"
+    assert objects[0]["class_name"] == "keys"
+    assert objects[0]["visibility"] == "observed"
+    assert objects[0]["last_observed_frame"] == 0
+    assert objects[0]["has_uncertainty"] is False
+
+
+def test_run_events_endpoint_returns_timeline(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=QueryableProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}/events"
+    )
+
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert len(events) == 1
+    assert events[0]["object_id"] == "object-1"
+    assert events[0]["event_type"] == "OBJECT_APPEARED"
+    assert events[0]["provenance"] == "observed"
+    assert events[0]["frame_index"] == 0
+
+
+class FragmentedIdentityProcessor:
+    def process(self, registry, input_path, output_dir):
+        world_state = WorldStateProjector()
+
+        first_observation = TrackObservation(
+            track_id="track-1",
+            class_name="keys",
+            confidence=0.70,
+            bbox=BoundingBox(10, 10, 30, 30),
+        )
+        world_state.update(
+            frame_index=0,
+            timestamp_ms=0,
+            identity_assignments=[
+                IdentityAssignment(
+                    object_id="object-1",
+                    track_id="track-1",
+                    class_name="keys",
+                    confidence=0.70,
+                    provenance=IdentityProvenance.OBSERVED_TRACK,
+                    observation=first_observation,
+                )
+            ],
+            events=[],
+        )
+
+        persistent_observation = TrackObservation(
+            track_id="track-2",
+            class_name="keys",
+            confidence=0.95,
+            bbox=BoundingBox(100, 100, 140, 140),
+        )
+        assignment = IdentityAssignment(
+            object_id="object-2",
+            track_id="track-2",
+            class_name="keys",
+            confidence=0.95,
+            provenance=IdentityProvenance.OBSERVED_TRACK,
+            observation=persistent_observation,
+        )
+        world_state.update(
+            frame_index=1,
+            timestamp_ms=500,
+            identity_assignments=[assignment],
+            events=[],
+        )
+        world_state.update(
+            frame_index=2,
+            timestamp_ms=1000,
+            identity_assignments=[assignment],
+            events=[],
+        )
+
+        observations = output_dir / "observations.jsonl"
+        observations.write_text("{}\n", encoding="utf-8")
+
+        return ProcessedRun(
+            summary=ProcessingSummary(
+                frames_processed=3,
+                detections_emitted=3,
+                track_observations_emitted=3,
+                identity_assignments_emitted=3,
+                events_emitted=0,
+                observations_path=observations,
+                annotated_video_path=None,
+            ),
+            world_state=world_state,
+            source_video_path=input_path,
+        )
+
+
+def test_where_query_prefers_persistent_identity_and_ignores_one_frame_fragment(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=FragmentedIdentityProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+        "/targets/my-keys/where"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["object_id"] == "object-2"
+    assert payload["matching_object_count"] == 2
+    assert payload["ambiguity"] is None
+
+
+class SequentialFragmentsProcessor:
+    def process(self, registry, input_path, output_dir):
+        world_state = WorldStateProjector()
+
+        first = TrackObservation(
+            track_id="track-a",
+            class_name="keys",
+            confidence=0.9,
+            bbox=BoundingBox(10, 10, 30, 30),
+        )
+        world_state.update(
+            frame_index=0,
+            timestamp_ms=0,
+            identity_assignments=[
+                IdentityAssignment(
+                    object_id="object-a",
+                    track_id="track-a",
+                    class_name="keys",
+                    confidence=0.9,
+                    provenance=IdentityProvenance.OBSERVED_TRACK,
+                    observation=first,
+                )
+            ],
+            events=[],
+        )
+
+        second = TrackObservation(
+            track_id="track-b",
+            class_name="keys",
+            confidence=0.9,
+            bbox=BoundingBox(12, 12, 32, 32),
+        )
+        world_state.update(
+            frame_index=1,
+            timestamp_ms=500,
+            identity_assignments=[
+                IdentityAssignment(
+                    object_id="object-b",
+                    track_id="track-b",
+                    class_name="keys",
+                    confidence=0.9,
+                    provenance=IdentityProvenance.OBSERVED_TRACK,
+                    observation=second,
+                )
+            ],
+            events=[],
+        )
+
+        observations = output_dir / "observations.jsonl"
+        observations.write_text("{}\n", encoding="utf-8")
+
+        return ProcessedRun(
+            summary=ProcessingSummary(
+                frames_processed=2,
+                detections_emitted=2,
+                track_observations_emitted=2,
+                identity_assignments_emitted=2,
+                events_emitted=0,
+                observations_path=observations,
+                annotated_video_path=None,
+            ),
+            world_state=world_state,
+            source_video_path=input_path,
+        )
+
+
+def test_where_query_does_not_flag_sequential_identity_fragments_as_multiple_objects(
+    tmp_path: Path,
+) -> None:
+    client = TestClient(
+        create_app(
+            store=SessionStore(),
+            processor=SequentialFragmentsProcessor(),
+            workspace_root=tmp_path,
+        )
+    )
+    session_id = client.post("/sessions").json()["session_id"]
+    client.post(
+        f"/sessions/{session_id}/targets",
+        json={"display_name": "My Keys", "prompt": "keys"},
+    )
+    upload = client.post(
+        f"/sessions/{session_id}/videos",
+        files={"video": ("clip.mp4", b"video", "video/mp4")},
+    )
+    run_id = upload.json()["run_id"]
+
+    payload = client.get(
+        f"/sessions/{session_id}/runs/{run_id}"
+        "/targets/my-keys/where"
+    ).json()
+
+    assert payload["matching_object_count"] == 2
+    assert payload["ambiguity"] is None

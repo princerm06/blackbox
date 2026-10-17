@@ -1,4 +1,5 @@
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -240,6 +241,7 @@ class VideoDetectionPipeline:
         identity_resolver: ObjectIdentityResolver | None = None,
         event_extractor: EventExtractor | None = None,
         world_state: WorldStateProjector | None = None,
+        max_processing_fps: float | None = None,
     ):
         self.detector = detector
         self.tracker = tracker or IoUTracker()
@@ -248,6 +250,9 @@ class VideoDetectionPipeline:
         )
         self.event_extractor = event_extractor or EventExtractor()
         self.world_state = world_state or WorldStateProjector()
+        if max_processing_fps is not None and max_processing_fps <= 0:
+            raise ValueError("max_processing_fps must be positive")
+        self.max_processing_fps = max_processing_fps
 
     def process(
         self,
@@ -265,6 +270,17 @@ class VideoDetectionPipeline:
         )
 
         reader = VideoReader(input_path)
+        frame_stride = 1
+        if (
+            self.max_processing_fps is not None
+            and reader.fps > self.max_processing_fps
+        ):
+            frame_stride = max(
+                1,
+                math.ceil(reader.fps / self.max_processing_fps),
+            )
+        output_fps = reader.fps / frame_stride
+
         writer: cv2.VideoWriter | None = None
 
         if annotated_video_path is not None:
@@ -272,7 +288,7 @@ class VideoDetectionPipeline:
             writer = cv2.VideoWriter(
                 str(annotated_video_path),
                 fourcc,
-                reader.fps,
+                output_fps,
                 (reader.width, reader.height),
             )
 
@@ -294,6 +310,9 @@ class VideoDetectionPipeline:
                 encoding="utf-8",
             ) as output_file:
                 for video_frame in reader.frames():
+                    if video_frame.frame_index % frame_stride != 0:
+                        continue
+
                     detections = self.detector.detect(
                         video_frame.image
                     )
@@ -303,7 +322,7 @@ class VideoDetectionPipeline:
                     )
 
                     identity_assignments = self.identity_resolver.update(
-                        frame_index=video_frame.frame_index,
+                        frame_index=frames_processed,
                         observations=track_observations,
                     )
 

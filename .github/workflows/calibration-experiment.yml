@@ -1,0 +1,63 @@
+name: Calibration Experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/calibration-experiments
+    paths:
+      - "blackbox/experiments/**"
+      - "scripts/run_calibration_experiment.py"
+      - "scripts/run_learned_experiment.py"
+      - "tests/experiments/**"
+      - ".github/workflows/calibration-experiment.yml"
+
+jobs:
+  canonical-calibration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run canonical synthetic experiment
+        run: |
+          python scripts/run_calibration_experiment.py \
+            --cases-per-level 250 \
+            --seed 7 \
+            --bins 10 \
+            --output-dir runs/calibration
+
+      - name: Run learned-model experiment
+        run: |
+          python scripts/run_learned_experiment.py \
+            --cases-per-level 500 \
+            --data-seed 7 \
+            --split-seed 17 \
+            --bins 10 \
+            --output-dir runs/learned-calibration
+
+      - name: Upload calibration artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration-seed-7
+          path: runs/calibration/
+          if-no-files-found: error
+
+      - name: Upload learned-model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: learned-calibration-seed-7
+          path: runs/learned-calibration/
+          if-no-files-found: error
