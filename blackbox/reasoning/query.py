@@ -93,34 +93,70 @@ class BeliefQueryEngine:
                 ),
             )
 
+        subject_class = self.projector.object_class(object_id)
+        usable = []
+        for hypothesis in location.hypotheses:
+            value = str(hypothesis.value)
+            if value.startswith("associated_with:"):
+                related_object = value.split(":", 1)[1]
+                if (
+                    subject_class is not None
+                    and self.projector.object_class(related_object)
+                    == subject_class
+                ):
+                    continue
+            usable.append(hypothesis)
+
+        if not usable:
+            usable = list(location.hypotheses)
+
+        total_weight = sum(hypothesis.weight for hypothesis in usable)
         ranked = sorted(
-            location.hypotheses,
-            key=lambda hypothesis: hypothesis.weight,
+            (
+                (hypothesis, hypothesis.weight / total_weight)
+                for hypothesis in usable
+            ),
+            key=lambda item: item[1],
             reverse=True,
         )
-        primary = ranked[0]
+        primary, primary_weight = ranked[0]
         alternatives = tuple(
-            (str(hypothesis.value), hypothesis.weight)
-            for hypothesis in ranked[1:]
+            (str(hypothesis.value), weight)
+            for hypothesis, weight in ranked[1:]
         )
 
+        relevant_signals = []
+        for signal in self.projector.opportunities_for(object_id):
+            if (
+                signal.source_object_id is not None
+                and subject_class is not None
+                and self.projector.object_class(signal.source_object_id)
+                == subject_class
+            ):
+                continue
+            relevant_signals.append(signal)
+
+        relevant_signals.sort(
+            key=lambda signal: signal.strength,
+            reverse=True,
+        )
         evidence = tuple(
             dict.fromkeys(
                 signal.rationale
-                for signal in self.projector.opportunities_for(object_id)
+                for signal in relevant_signals
             )
-        )
+        )[:6]
 
         answer = self._format_location_answer(
             object_id,
             str(primary.value),
-            primary.weight,
+            primary_weight,
         )
 
         return EvidenceGroundedAnswer(
             subject_object_id=object_id,
             answer=answer,
-            confidence=primary.weight,
+            confidence=primary_weight,
             provenance="inferred",
             primary_hypothesis=str(primary.value),
             alternatives=alternatives,
