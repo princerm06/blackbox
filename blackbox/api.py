@@ -445,7 +445,13 @@ def create_app(
                 ),
             )
 
-        object_id = object_ids[0]
+        object_id = max(
+            object_ids,
+            key=lambda candidate_id: (
+                run.world_state.observation_count(candidate_id),
+                candidate_id,
+            ),
+        )
         object_label = _object_labeler(session, run.world_state)
         answer = BeliefQueryEngine(
             run.world_state,
@@ -463,7 +469,11 @@ def create_app(
             "matching_object_count": len(object_ids),
             "ambiguity": (
                 "multiple physical objects matched this visual concept"
-                if len(object_ids) > 1
+                if sum(
+                    1
+                    for candidate_id in object_ids
+                    if run.world_state.observation_count(candidate_id) >= 2
+                ) > 1
                 else None
             ),
         }
