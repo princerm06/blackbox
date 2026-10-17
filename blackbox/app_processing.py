@@ -1,4 +1,7 @@
 from dataclasses import asdict, dataclass
+import os
+
+import numpy as np
 from pathlib import Path
 from typing import Callable
 
@@ -15,10 +18,51 @@ from blackbox.perception.pipeline import (
 from blackbox.perception.identity import ObjectIdentityResolver
 from blackbox.perception.tracker import IoUTracker
 from blackbox.perception.targets import TargetRegistry
+from blackbox.schemas.perception import BoundingBox, Detection
 from blackbox.world.projector import WorldStateProjector
 
 
 DetectorFactory = Callable[[TargetRegistry], Detector]
+
+
+class LightweightCloudDetector:
+    """Low-memory open-vocabulary detector for constrained cloud demos."""
+
+    def __init__(self, registry: TargetRegistry) -> None:
+        from ultralytics import YOLOWorld
+
+        prompts = list(registry.prompts())
+        if "person" not in prompts:
+            prompts.append("person")
+        self.prompts = tuple(prompts)
+        self.model = YOLOWorld("yolov8s-worldv2.pt")
+        self.model.set_classes(list(self.prompts))
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        results = self.model.predict(
+            source=frame,
+            verbose=False,
+            conf=0.20,
+            imgsz=480,
+        )
+        if not results:
+            return []
+
+        result = results[0]
+        detections: list[Detection] = []
+        for box in result.boxes:
+            class_id = int(box.cls[0])
+            class_name = str(result.names[class_id])
+            confidence = float(box.conf[0])
+            x1, y1, x2, y2 = (float(value) for value in box.xyxy[0].tolist())
+            detections.append(
+                Detection(
+                    class_name=class_name,
+                    confidence=confidence,
+                    bbox=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
+                )
+            )
+        return detections
 
 
 @dataclass(frozen=True)
@@ -52,6 +96,11 @@ class RunStore:
 
 
 def default_detector_factory(registry: TargetRegistry) -> Detector:
+    if os.getenv("BLACKBOX_LIGHTWEIGHT_CLOUD", "").strip().lower() in {
+        "1", "true", "yes",
+    }:
+        return LightweightCloudDetector(registry)
+
     return HybridDetector(
         (
             YoloDetector(allowed_class_names=("person",)),
@@ -93,7 +142,9 @@ class SessionVideoProcessor:
                 max_reid_gap_frames=20,
             ),
             world_state=world_state,
-            max_processing_fps=2.0,
+            max_processing_fps=float(
+                os.getenv("BLACKBOX_MAX_PROCESSING_FPS", "2.0")
+            ),
         )
         summary = pipeline.process(
             input_path=input_path,
