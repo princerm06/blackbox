@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -196,11 +197,17 @@ def create_app(
     video_processor = processor or SessionVideoProcessor()
     runs = run_store or RunStore()
     app = FastAPI(title="BlackBox", version="0.1.0")
+    configured_origins = [
+        origin.strip()
+        for origin in os.getenv("BLACKBOX_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            *configured_origins,
         ],
         allow_credentials=True,
         allow_methods=["*"],
