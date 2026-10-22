@@ -93,10 +93,15 @@ export default function AmazonDemoPage() {
             while BlackBox keeps observed facts separate from inference.
           </p>
         </div>
-        <div className={styles.badges}>
-          <span>Alexa+ simulation</span>
-          <span>MCP · Streamable HTTP</span>
-          <span>Persistent context</span>
+        <div className={styles.headerActions}>
+          <div className={styles.badges}>
+            <span>Alexa+ simulation</span>
+            <span>MCP · Streamable HTTP</span>
+            <span>Persistent context</span>
+          </div>
+          <a className={styles.fullBlackBoxLink} href="/">
+            Open full BlackBox →
+          </a>
         </div>
       </header>
 
