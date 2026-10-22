@@ -26,6 +26,9 @@ open-vocab = [
     "torch>=2.4",
     "pillow>=10.0",
 ]
+amazon = [
+    "mcp>=2.3,<3",
+]
 
 [tool.setuptools.packages.find]
 include = ["blackbox*"]
