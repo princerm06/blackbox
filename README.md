@@ -122,6 +122,48 @@ python scripts/run_learned_experiment.py
 Experiment outputs are written under `runs/` and are ignored by git.
 
 (Add persistent session storage with IBM Bob)
+
+## Amazon Build, Ship, Shape — Alexa+ Track
+
+The Amazon hackathon branch adds a conversational interface to BlackBox without
+replacing its uncertainty-aware world model. The new layer exposes BlackBox
+memory through a self-hosted Model Context Protocol (MCP) server and an
+Alexa+-style web simulator.
+
+New Amazon-track functionality:
+
+- Streamable HTTP MCP server built with the official Python MCP SDK v2
+- `where_are_my_keys_tool` — ranked location hypothesis with evidence/caveats
+- `what_changed_tool` — temporal scene changes
+- `what_do_you_know_tool` — explicit observed / inferred / unknown separation
+- `recommended_check_tool` — re-observation recommendation
+- browser-based Alexa+ simulation for a polished voice-assistant-style demo
+
+The hackathon simulator uses the same preprocessed hero-run snapshot generated
+by the full BlackBox pipeline; it does not claim fresh cloud vision inference.
+
+Install and run the MCP server:
+
+```bash
+python -m pip install -e ".[amazon]"
+python -m blackbox.amazon_mcp
+```
+
+The Streamable HTTP MCP endpoint is then available at:
+
+```text
+http://127.0.0.1:8001/mcp
+```
+
+For local inspection with the MCP CLI:
+
+```bash
+mcp dev blackbox/amazon_mcp.py
+```
+
+The Amazon web simulator is available from the Next.js frontend at
+`/amazon`.
+
 ## Research direction
 
 The current research question is:
