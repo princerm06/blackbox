@@ -1,0 +1,176 @@
+.page {
+  min-height: 100vh;
+  padding: 42px;
+  background: #07090d;
+  color: #f5f7fb;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.header {
+  max-width: 1380px;
+  margin: 0 auto 26px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+}
+
+.kicker, .label {
+  color: #8ea8ff;
+  font-size: 11px;
+  letter-spacing: .16em;
+  font-weight: 800;
+}
+
+.header h1 {
+  margin: 12px 0 14px;
+  max-width: 880px;
+  font-size: clamp(42px, 5vw, 70px);
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.header p {
+  max-width: 860px;
+  color: #abb5c7;
+  line-height: 1.6;
+}
+
+.back {
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 11px 15px;
+  text-decoration: none;
+  background: #eef2ff;
+  color: #10131c;
+  font-weight: 750;
+  font-size: 13px;
+}
+
+.grid {
+  max-width: 1380px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: .82fr 1.18fr;
+  gap: 18px;
+}
+
+.memory, .agent {
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(15,18,25,.96);
+  border-radius: 24px;
+  padding: 24px;
+}
+
+.memory h2 { font-size: 30px; margin: 14px 0 7px; }
+.status { color: #f1b16f; font-size: 13px; line-height: 1.5; }
+
+.block {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
+
+.block strong { color: #9bb0ff; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.block p { color: #b5bfd0; font-size: 13px; line-height: 1.5; margin: 9px 0 0; }
+
+.timeline {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.timeline span {
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+  color: #7f8ba0;
+  font-size: 11px;
+}
+
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.badges span {
+  border: 1px solid rgba(126,151,255,.22);
+  background: rgba(72,96,181,.12);
+  color: #b9c7ff;
+  border-radius: 999px;
+  padding: 8px 11px;
+  font-size: 11px;
+}
+
+.prompts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+.prompt, .active {
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 999px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.prompt { background: rgba(255,255,255,.035); color: #aeb8c9; }
+.active { background: #eef2ff; color: #11141e; }
+
+.query {
+  padding: 18px;
+  border-radius: 14px;
+  background: #0a0d13;
+  border: 1px solid rgba(255,255,255,.07);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.run {
+  margin-top: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  background: linear-gradient(90deg, #5d7cff, #8a5cff);
+  color: white;
+  font-weight: 800;
+  font-size: 14px;
+}
+.run:disabled { opacity: .65; cursor: wait; }
+
+.output, .error {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.075);
+}
+.error { border-color: rgba(255,106,106,.28); }
+.error p { color: #ffb0b0; }
+.error code { color: #9aa6ba; word-break: break-word; font-size: 11px; }
+
+.modelLine { color: #7c8ca6; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.output h2 { margin: 10px 0 8px; font-size: 22px; }
+.output h3 { margin: 18px 0 8px; color: #9db0ff; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.output p { color: #b9c2d2; line-height: 1.55; }
+.answer { color: #f2f5fb !important; font-size: 17px; }
+
+.checks { display: grid; gap: 8px; }
+.check {
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(83,108,207,.10);
+  border: 1px solid rgba(112,138,236,.15);
+}
+.check p { font-size: 12px; margin: 7px 0; }
+.check span { color: #8190a7; font-size: 11px; }
+
+.disclosure {
+  margin-top: 16px;
+  color: #727d8f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .page { padding: 24px; }
+  .header { align-items: flex-start; flex-direction: column; }
+  .grid { grid-template-columns: 1fr; }
+  .timeline { grid-template-columns: 1fr; }
+}
