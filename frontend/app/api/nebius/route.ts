@@ -85,8 +85,7 @@ export async function POST(request: NextRequest) {
       model: MODEL,
       messages: promptFor(question),
       temperature: 0.2,
-      max_tokens: 700,
-      response_format: { type: "json_object" },
+      max_tokens: 6000,
     }),
     cache: "no-store",
   });
@@ -104,17 +103,29 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = await response.json();
-  const raw = payload?.choices?.[0]?.message?.content;
+  const choice = payload?.choices?.[0];
+  const raw = choice?.message?.content;
 
-  if (typeof raw !== "string") {
+  if (typeof raw !== "string" || !raw.trim()) {
     return NextResponse.json(
-      { error: "Token Factory returned no assistant content." },
+      {
+        error: "Token Factory returned no visible assistant answer.",
+        detail:
+          choice?.finish_reason === "length"
+            ? "Nemotron exhausted its output budget while reasoning. Retry the request."
+            : `finish_reason=${choice?.finish_reason ?? "unknown"}`,
+      },
       { status: 502 },
     );
   }
 
+  const cleaned = raw
+    .trim()
+    .replace(/^\`\`\`(?:json)?\s*/i, "")
+    .replace(/\s*\`\`\`$/, "");
+
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(cleaned);
     return NextResponse.json({
       provider: "Nebius Token Factory",
       model: MODEL,
@@ -127,7 +138,7 @@ export async function POST(request: NextRequest) {
       model: MODEL,
       source: "BlackBox structured hero-run memory",
       result: {
-        answer: raw,
+        answer: cleaned,
         reasoning_summary:
           "Nemotron returned text instead of the requested JSON structure.",
         next_checks: [],
