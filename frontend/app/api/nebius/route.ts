@@ -104,26 +104,26 @@ export async function POST(request: NextRequest) {
 
   const payload = await response.json();
   const choice = payload?.choices?.[0];
-  const raw = choice?.message?.content;
+  const message = choice?.message;
+  const raw = typeof message?.content === "string"
+    ? message.content
+    : Array.isArray(message?.content)
+      ? message.content.filter((part: { type?: string; text?: string }) => part.type === "text" && typeof part.text === "string").map((part: { text: string }) => part.text).join("\n")
+      : "";
+  const reasoning = typeof message?.reasoning_content === "string" ? message.reasoning_content : "";
 
-  if (typeof raw !== "string" || !raw.trim()) {
+  if (!raw.trim()) {
     return NextResponse.json(
       {
-        error: "Token Factory returned no visible assistant answer.",
-        detail:
-          choice?.finish_reason === "length"
-            ? "Nemotron exhausted its output budget while reasoning. Retry the request."
-            : `finish_reason=${choice?.finish_reason ?? "unknown"}`,
+        error: "Token Factory returned no assistant content.",
+        finish_reason: choice?.finish_reason ?? null,
+        has_reasoning_content: Boolean(reasoning),
+        usage: payload?.usage ?? null,
+        hint: "The model may have exhausted max_tokens on reasoning before producing an answer.",
       },
       { status: 502 },
     );
   }
-
-  const cleaned = raw
-    .trim()
-    .replace(/^\`\`\`(?:json)?\s*/i, "")
-    .replace(/\s*\`\`\`$/, "");
-
   try {
     const parsed = JSON.parse(cleaned);
     return NextResponse.json({
