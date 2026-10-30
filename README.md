@@ -164,6 +164,53 @@ mcp dev blackbox/amazon_mcp.py
 The Amazon web simulator is available from the Next.js frontend at
 `/amazon`.
 
+
+## Nebius × NVIDIA Global AI Hackathon — Best Apps and Agents
+
+The Nebius challenge branch adds a live evidence-constrained reasoning layer to
+BlackBox using **NVIDIA Nemotron 3.5 Lightning served by Nebius Token Factory**.
+
+BlackBox remains the source of truth for observations, temporal events,
+uncertainty, and heuristic location associations. The Nemotron layer receives
+that structured memory and produces a grounded investigation plan: what can be
+said safely, what remains unknown, and what should be checked next to reduce
+uncertainty.
+
+This integration makes a runtime call to the Nebius Token Factory
+OpenAI-compatible API and therefore satisfies the hackathon's Nebius platform
+requirement without moving the rest of the app off its existing deployment.
+
+New challenge functionality:
+
+- live Token Factory inference through `/api/nebius`
+- NVIDIA `nvidia/Nemotron-3_5-Lightning`
+- evidence-constrained prompts that prohibit unsupported containment,
+  transfer, manipulation, and causal claims
+- ranked re-observation / investigation actions over BlackBox memory
+- judge-facing Next.js experience at `/nebius`
+- explicit disclosure that the visual-memory snapshot is preprocessed while
+  the Nemotron reasoning call is live
+
+Configure the frontend deployment with:
+
+```bash
+NEBIUS_API_KEY=...
+# Optional overrides:
+NEBIUS_BASE_URL=https://api.tokenfactory.nebius.com/v1
+NEBIUS_MODEL=nvidia/Nemotron-3_5-Lightning
+```
+
+Then run:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000/nebius` and click **Run Nemotron investigation**.
+The API key is read only on the server and must never be committed.
+
 ## Research direction
 
 The current research question is:
