@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
       { status: 502 },
     );
   }
+  const cleaned = raw.trim().replace(/^```(?:json)?\\s*/i, "").replace(/\\s*```$/, "");
+
   try {
     const parsed = JSON.parse(cleaned);
     return NextResponse.json({
