@@ -100,9 +100,10 @@ export default function MetaDemoPage() {
 
         <section className={styles.agent}>
           <div className={styles.badges}>
-            <span>Nebius Token Factory</span>
+            <span>Meta Model API</span>
             <span>Muse Spark 1.3</span>
-            <span>Live runtime inference</span>\n            <span>Push the Frontier</span>
+            <span>Live runtime inference</span>
+            <span>Push the Frontier</span>
           </div>
 
           <div className={styles.label}>ASK THE MEMORY INVESTIGATOR</div>
