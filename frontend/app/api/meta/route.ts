@@ -58,7 +58,7 @@ function messagesFor(question: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.MODEL_API_KEY;
+  const apiKey = process.env.MODEL_API_KEY ?? process.env.META_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "MODEL_API_KEY is not configured on this deployment. Add your Meta Model API key to Vercel." },
